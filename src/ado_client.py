@@ -1,4 +1,10 @@
-"""Azure DevOps REST: WIQL queries, JSON Patch, comments, block edits."""
+"""Azure DevOps REST: WIQL queries, JSON Patch, comments, block edits.
+
+The REST methods here are wrapped by the central `with_retry` helper so
+the orchestration layer doesn't need to know about HTTP retries.
+"""
+
+from __future__ import annotations
 
 import sys
 from pathlib import Path
@@ -6,9 +12,20 @@ from typing import Iterable
 
 import requests
 
+from retry import with_retry
+
 BASE = "https://dev.azure.com"
 API_VERSION = "7.1-preview.4"
 NON_JSON_BODY_DUMP = Path("/tmp/ado-non-json-response.html")
+
+# Transient failures safe to repeat for ADO REST.
+_REST_RETRYABLE: tuple[type[BaseException], ...] = (
+    ConnectionError,
+    TimeoutError,
+    OSError,
+    requests.exceptions.ConnectionError,
+    requests.exceptions.Timeout,
+)
 
 
 def _make_auth(pat: str | None = "") -> dict[str, str]:
@@ -50,12 +67,16 @@ class AdoClient:
     def _patch(self, item_id: int, field: str, value) -> None:
         url = f"{self._url('/_apis/wit/workitems')}/{item_id}?api-version=7.1"
         body = [{"op": "add", "path": f"/fields/{field}", "value": value}]
-        r = requests.patch(
-            url,
-            json=body,
-            headers=self._headers({"Content-Type": "application/json-patch+json"}),
-        )
-        r.raise_for_status()
+
+        def _do():
+            r = requests.patch(
+                url,
+                json=body,
+                headers=self._headers({"Content-Type": "application/json-patch+json"}),
+            )
+            r.raise_for_status()
+
+        with_retry(_do, retryable=_REST_RETRYABLE)
 
     def query_items(self, tag: str, exclude_tags: Iterable[str]) -> list[dict]:
         """WIQL: items with <tag>, excluding any of <exclude_tags>."""
@@ -67,48 +88,57 @@ class AdoClient:
             f"WHERE [System.Tags] CONTAINS '{tag}' AND {not_clauses}"
         )
         url = f"{self._url('/_apis/wit/wiql')}?api-version=7.1"
-        print(f"[ado_client] POST {url}", file=sys.stderr)
-        print(
-            f"[ado_client] org={self.org!r} project={self.project!r} tag={tag!r}",
-            file=sys.stderr,
-        )
-        r = requests.post(url, json={"query": wiql}, headers=self._headers())
-        print(
-            f"[ado_client] <- {r.status_code} {r.reason} "
-            f"content-type={r.headers.get('content-type')!r} "
-            f"len={len(r.text)}",
-            file=sys.stderr,
-        )
-        if r.status_code >= 400:
-            raise requests.exceptions.HTTPError(
-                f"WIQL POST failed: HTTP {r.status_code} {r.reason} from {url}",
-                response=r,
-            )
-        # ponytail: ADO sometimes returns HTML (auth challenge, proxy error,
-        # wrong-org redirect) with a 2xx status. Dump the body to a file and
-        # print the URL + status so the failure mode is obvious instead of a
-        # JSON parse error.
-        if "json" not in r.headers.get("content-type", "").lower():
-            NON_JSON_BODY_DUMP.write_text(r.text, encoding="utf-8", errors="replace")
+
+        def _post():
+            print(f"[ado_client] POST {url}", file=sys.stderr)
             print(
-                f"[ado_client] non-JSON response.\n"
-                f"  status={r.status_code}\n"
-                f"  content-type={r.headers.get('content-type')!r}\n"
-                f"  location={r.headers.get('Location') or r.headers.get('location')!r}\n"
-                f"  body_len={len(r.text)}\n"
-                f"  body_dump={NON_JSON_BODY_DUMP}",
+                f"[ado_client] org={self.org!r} project={self.project!r} tag={tag!r}",
                 file=sys.stderr,
             )
-            print("--- body begin ---", file=sys.stderr)
-            print(r.text, file=sys.stderr, end="" if r.text.endswith("\n") else "\n")
-            print("--- body end ---", file=sys.stderr)
-            raise requests.exceptions.HTTPError(
-                f"WIQL returned non-JSON content-type "
-                f"'{r.headers.get('content-type')}' status {r.status_code} from {url}: "
-                f"body_dump={NON_JSON_BODY_DUMP}",
-                response=r,
+            r = requests.post(url, json={"query": wiql}, headers=self._headers())
+            print(
+                f"[ado_client] <- {r.status_code} {r.reason} "
+                f"content-type={r.headers.get('content-type')!r} "
+                f"len={len(r.text)}",
+                file=sys.stderr,
             )
-        ids = [w["id"] for w in r.json().get("workItems", [])]
+            if r.status_code >= 400:
+                raise requests.exceptions.HTTPError(
+                    f"WIQL POST failed: HTTP {r.status_code} {r.reason} from {url}",
+                    response=r,
+                )
+            # ponytail: ADO sometimes returns HTML (auth challenge, proxy error,
+            # wrong-org redirect) with a 2xx status. Dump the body to a file and
+            # print the URL + status so the failure mode is obvious instead of a
+            # JSON parse error.
+            if "json" not in r.headers.get("content-type", "").lower():
+                NON_JSON_BODY_DUMP.write_text(
+                    r.text, encoding="utf-8", errors="replace"
+                )
+                print(
+                    f"[ado_client] non-JSON response.\n"
+                    f"  status={r.status_code}\n"
+                    f"  content-type={r.headers.get('content-type')!r}\n"
+                    f"  location={r.headers.get('Location') or r.headers.get('location')!r}\n"
+                    f"  body_len={len(r.text)}\n"
+                    f"  body_dump={NON_JSON_BODY_DUMP}",
+                    file=sys.stderr,
+                )
+                print("--- body begin ---", file=sys.stderr)
+                print(
+                    r.text, file=sys.stderr, end="" if r.text.endswith("\n") else "\n"
+                )
+                print("--- body end ---", file=sys.stderr)
+                raise requests.exceptions.HTTPError(
+                    f"WIQL returned non-JSON content-type "
+                    f"'{r.headers.get('content-type')}' status {r.status_code} from {url}: "
+                    f"body_dump={NON_JSON_BODY_DUMP}",
+                    response=r,
+                )
+            return r.json()
+
+        body = with_retry(_post, retryable=_REST_RETRYABLE)
+        ids = [w["id"] for w in body.get("workItems", [])]
         if not ids:
             return []
         items: list[dict] = []
@@ -120,39 +150,58 @@ class AdoClient:
                 f"{self._url('/_apis/wit/workitems')}"
                 f"?ids={','.join(map(str, batch))}&api-version=7.1"
             )
-            rr = requests.get(u, headers=self._headers())
-            rr.raise_for_status()
-            items.extend(rr.json()["value"])
+
+            def _get(url=u):
+                rr = requests.get(u, headers=self._headers())
+                rr.raise_for_status()
+                return rr.json()["value"]
+
+            items.extend(with_retry(_get, retryable=_REST_RETRYABLE))
         return items
 
     def comment(self, item_id: int, body: str) -> None:
-        r = requests.post(
-            f"{self._url(f'/_apis/wit/workItems/{item_id}/comments')}?format=markdown&api-version={API_VERSION}",
-            json={"text": body},
-            headers=self._headers(),
+        url = (
+            f"{self._url(f'/_apis/wit/workitems/{item_id}/comments')}"
+            f"?format=markdown&api-version={API_VERSION}"
         )
-        r.raise_for_status()
+
+        def _do():
+            r = requests.post(url, json={"text": body}, headers=self._headers())
+            r.raise_for_status()
+
+        with_retry(_do, retryable=_REST_RETRYABLE)
 
     def get_comments(self, item_id: int, top: int | None = None) -> list[dict]:
-        url = f"{self._url(f'/_apis/wit/workItems/{item_id}/comments')}?api-version={API_VERSION}"
+        url = (
+            f"{self._url(f'/_apis/wit/workitems/{item_id}/comments')}"
+            f"?api-version={API_VERSION}"
+        )
         if top is not None:
             url = f"{url}&$top={top}"
-        r = requests.get(url, headers=self._headers())
-        r.raise_for_status()
-        return r.json().get("comments", [])
+
+        def _get():
+            r = requests.get(url, headers=self._headers())
+            r.raise_for_status()
+            return r.json().get("comments", [])
+
+        return with_retry(_get, retryable=_REST_RETRYABLE)
 
     def upload_attachment(self, filename: str, content: bytes) -> dict:
         # ponytail: attachments endpoint has no -preview.4 — use stable 7.1
         url = (
             f"{self._url('/_apis/wit/attachments')}?fileName={filename}&api-version=7.1"
         )
-        r = requests.post(
-            url,
-            data=content,
-            headers=self._headers({"Content-Type": "application/octet-stream"}),
-        )
-        r.raise_for_status()
-        return r.json()
+
+        def _do():
+            r = requests.post(
+                url,
+                data=content,
+                headers=self._headers({"Content-Type": "application/octet-stream"}),
+            )
+            r.raise_for_status()
+            return r.json()
+
+        return with_retry(_do, retryable=_REST_RETRYABLE)
 
     def add_attachment_relation(self, item_id: int, attachment_url: str) -> None:
         url = f"{self._url('/_apis/wit/workitems')}/{item_id}?api-version=7.1"
@@ -163,12 +212,16 @@ class AdoClient:
                 "value": {"rel": "AttachedFile", "url": attachment_url},
             }
         ]
-        r = requests.patch(
-            url,
-            json=body,
-            headers=self._headers({"Content-Type": "application/json-patch+json"}),
-        )
-        r.raise_for_status()
+
+        def _do():
+            r = requests.patch(
+                url,
+                json=body,
+                headers=self._headers({"Content-Type": "application/json-patch+json"}),
+            )
+            r.raise_for_status()
+
+        with_retry(_do, retryable=_REST_RETRYABLE)
 
     def add_tag(self, item: dict, tag: str) -> None:
         current = item["fields"].get("System.Tags", "") or ""
@@ -202,4 +255,3 @@ class AdoClient:
     def patch_title(self, item_id: int, title: str) -> None:
         # Caller must check ALLOW_TITLE_EDITS before invoking.
         self._patch(item_id, "System.Title", title)
-
