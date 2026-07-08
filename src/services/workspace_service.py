@@ -13,6 +13,7 @@ Implementation note:
   monkeypatching (`monkeypatch.setattr(refine.git_ops, "clone_all", ...)`)
   propagates here.
 """
+
 from __future__ import annotations
 
 import logging
@@ -73,7 +74,10 @@ class WorkspaceService:
         cache_root.mkdir(parents=True, exist_ok=True)
         log.info(
             "item %s repos=%s cache_root=%s workspace=%s",
-            item_id, [r["name"] for r in repos], cache_root, workspace,
+            item_id,
+            [r["name"] for r in repos],
+            cache_root,
+            workspace,
         )
 
         clone_started = _now()
@@ -82,7 +86,12 @@ class WorkspaceService:
         # subprocess.CalledProcessError (NOT in retryable tuple when bad repo).
         with_retry(
             lambda: git_ops.clone_all(repos, cache_root, depth, pat),
-            retryable=(subprocess.CalledProcessError, OSError, ConnectionError, TimeoutError),
+            retryable=(
+                subprocess.CalledProcessError,
+                OSError,
+                ConnectionError,
+                TimeoutError,
+            ),
         )
         if on_clone_duration is not None:
             on_clone_duration(_now() - clone_started)
@@ -125,12 +134,12 @@ class WorkspaceService:
                 continue
             try:
                 subprocess.run(
-                    ["codegraph", "index", "-q"],
+                    ["codegraph", "init"],
                     cwd=str(repo_path),
                     capture_output=True,
                     text=True,
                     check=True,
-                    timeout=120,
+                    timeout=600,
                 )
             except FileNotFoundError:
                 # CodeGraph not installed; filesystem fallback still works.
@@ -157,4 +166,5 @@ class WorkspaceService:
 def _now() -> float:
     """Wall-clock seconds. Imported lazily so tests can patch if needed."""
     import time as _t
+
     return _t.perf_counter()

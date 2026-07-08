@@ -11,6 +11,7 @@ This file is intentionally thin:
   `RefinementService`. New code should not call it; prefer building the
   services once and calling `.refine(item)` directly.
 """
+
 from __future__ import annotations
 
 import json
@@ -25,7 +26,6 @@ import git_ops  # noqa: F401  (re-imported as refine.git_ops by tests' monkeypat
 import pi_runner
 import validate  # noqa: F401  (re-imported as refine.validate by tests' monkeypatch)
 from ado_client import AdoClient
-
 from services.context_service import ContextService
 from services.publishing_service import (
     PublishingService,
@@ -45,8 +45,11 @@ PROMPT = ROOT / "prompts" / "refine.prompt.tmpl.md"
 REPOS_CFG = ROOT / "repos.jsonc"
 
 REQUIRED_ENV = [
-    "ADO_ORG", "ADO_PROJECT",
-    "TAG_TRIGGER", "TAG_DONE", "TAG_BLOCKED",
+    "ADO_ORG",
+    "ADO_PROJECT",
+    "TAG_TRIGGER",
+    "TAG_DONE",
+    "TAG_BLOCKED",
     "CLONE_DEPTH",
     "PI_MODEL",
 ]
@@ -57,15 +60,15 @@ _QUOTE_CHARS = '"\u0027\u2018\u2019\u201c\u201d'
 
 def _clean(value: str) -> str:
     """Strip surrounding quotes + trailing `# comment` + whitespace. Defends against:
-      - CRLF line endings leaving a trailing \\r on Windows-edited .env files
-      - Quoted values like CLONE_DEPTH="1" (podman's --env-file doesn't strip
-        quotes the way docker's does)
-      - Smart-quote autocorrect in Windows editors replacing ' with '\u2018'
-      - Inline `# comments` from .env.example copy-paste — neither docker nor
-        podman's --env-file strips inline `# ...`, so they end up in the value
-        and break URL composition (`#` becomes a fragment, spaces get %20'd).
-        Requirement: `#` must be preceded by whitespace, so values containing
-        `#` (PATs, etc.) survive.
+    - CRLF line endings leaving a trailing \\r on Windows-edited .env files
+    - Quoted values like CLONE_DEPTH="1" (podman's --env-file doesn't strip
+      quotes the way docker's does)
+    - Smart-quote autocorrect in Windows editors replacing ' with '\u2018'
+    - Inline `# comments` from .env.example copy-paste — neither docker nor
+      podman's --env-file strips inline `# ...`, so they end up in the value
+      and break URL composition (`#` becomes a fragment, spaces get %20'd).
+      Requirement: `#` must be preceded by whitespace, so values containing
+      `#` (PATs, etc.) survive.
     """
     v = value.strip()
     # Strip trailing `# comment` FIRST so the quote-balance check below sees the
@@ -107,7 +110,10 @@ class Config:
             tag_trigger=_clean(os.environ["TAG_TRIGGER"]),
             tag_done=_clean(os.environ["TAG_DONE"]),
             tag_blocked=_clean(os.environ["TAG_BLOCKED"]),
-            allow_title_edits=_clean(os.environ.get("ALLOW_TITLE_EDITS", "false")).lower() == "true",
+            allow_title_edits=_clean(
+                os.environ.get("ALLOW_TITLE_EDITS", "false")
+            ).lower()
+            == "true",
             clone_depth=int(_clean(os.environ["CLONE_DEPTH"])),
             pi_model=_clean(os.environ["PI_MODEL"]),
             target_language=_clean(os.environ.get("TARGET_LANGUAGE", "English")),
@@ -140,7 +146,13 @@ def resolve_repos(repo_tags: list[str], repos_map: dict) -> list[dict]:
     return [{"name": n, **repos_map[n]} for n in repo_tags]
 
 
-def render_prompt(item: dict, repo_names: list[str], workspace: Path, comments_text: str = "", target_language: str = "English") -> str:
+def render_prompt(
+    item: dict,
+    repo_names: list[str],
+    workspace: Path,
+    comments_text: str = "",
+    target_language: str = "English",
+) -> str:
     """Render the refinement prompt from item + repos + comments. Pure function.
 
     Kept as a module-level wrapper so the existing test surface works.
@@ -152,7 +164,10 @@ def render_prompt(item: dict, repo_names: list[str], workspace: Path, comments_t
         .replace("{workspace}", str(workspace))
         .replace("{title}", f.get("System.Title", ""))
         .replace("{description}", f.get("System.Description", "") or "")
-        .replace("{acceptance_criteria}", f.get("Microsoft.VSTS.Common.AcceptanceCriteria", "") or "")
+        .replace(
+            "{acceptance_criteria}",
+            f.get("Microsoft.VSTS.Common.AcceptanceCriteria", "") or "",
+        )
         .replace("{system_info}", f.get("Microsoft.VSTS.TCM.SystemInfo", "") or "")
         .replace("{repro_steps}", f.get("Microsoft.VSTS.TCM.ReproSteps", "") or "")
         .replace("{comments}", comments_text)
@@ -195,6 +210,7 @@ def process_item(
     """
     cache_root = repo_cache_root or Path(f"/tmp/refine-repos-{os.getpid()}")
     workspace_svc = WorkspaceService(cache_root=cache_root)
+    return
     context_svc = ContextService(
         client=client,
         schema_path=SCHEMA,
@@ -214,7 +230,9 @@ def process_item(
 
 
 def main() -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     log = logging.getLogger("refine")
     cfg = Config.from_env()
     client = AdoClient(cfg.ado_org, cfg.ado_project, cfg.ado_pat)
