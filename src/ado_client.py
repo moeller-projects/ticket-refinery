@@ -1,4 +1,4 @@
-"""Azure DevOps REST: WIQL queries, JSON Patch, comments, marker-block edits."""
+"""Azure DevOps REST: WIQL queries, JSON Patch, comments, block edits."""
 
 import sys
 from pathlib import Path
@@ -17,7 +17,7 @@ def _make_auth(pat: str | None = "") -> dict[str, str]:
     return {"Authorization": f"Bearer {pat}"}
 
 
-# Description / AC: additive + idempotent-on-rerun via marker block.
+# Description / AC: additive + idempotent-on-rerun via block region.
 BEGIN = "<!-- ticket-refinery:begin -->"
 END = "<!-- ticket-refinery:end -->"
 
@@ -203,5 +203,3 @@ class AdoClient:
         # Caller must check ALLOW_TITLE_EDITS before invoking.
         self._patch(item_id, "System.Title", title)
 
-    def set_field(self, item_id: int, field: str, value) -> None:
-        self._patch(item_id, field, value)

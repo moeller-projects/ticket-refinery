@@ -186,7 +186,6 @@ def _base_env():
         "ADO_ORG": "org", "ADO_PROJECT": "proj",
         "TAG_TRIGGER": "needs-refinement", "TAG_DONE": "refinement-done",
         "TAG_BLOCKED": "refinement-blocked",
-        "MARKER_FIELD": "Custom.RefinementMarker",
         "CLONE_DEPTH": "1",
         "PI_MODEL": "model-x",
     }
@@ -243,8 +242,7 @@ def _make_config(**overrides):
         ado_org="org", ado_project="proj", ado_pat="pat",
         tag_trigger="needs-refinement", tag_done="refinement-done",
         tag_blocked="refinement-blocked", allow_title_edits=False,
-        marker_field="Custom.RefinementMarker", clone_depth=1,
-        pi_model="m",
+        clone_depth=1, pi_model="m",
     )
     base.update(overrides)
     return refine.Config(**base)
@@ -255,9 +253,6 @@ def _patch_git_ops(monkeypatch):
     monkeypatch.setattr(refine.git_ops, "cleanup", lambda *a, **kw: None)
 
 
-def _patch_marker(monkeypatch, sha="MARK"):
-    monkeypatch.setattr(refine.marker, "compute", lambda item, ws: sha)
-
 
 def _make_client():
     c = MagicMock()
@@ -267,13 +262,11 @@ def _make_client():
     c.patch_description = MagicMock()
     c.patch_acceptance_criteria = MagicMock()
     c.patch_title = MagicMock()
-    c.set_field = MagicMock()
     return c
 
 
 def test_process_item_happy_path_writes_back_and_transitions(monkeypatch):
     _patch_git_ops(monkeypatch)
-    _patch_marker(monkeypatch, sha="NEW")
 
     item = {
         "id": 42,
@@ -282,7 +275,6 @@ def test_process_item_happy_path_writes_back_and_transitions(monkeypatch):
             "System.Title": "T",
             "System.Description": "D",
             "Microsoft.VSTS.Common.AcceptanceCriteria": "",
-            "Custom.RefinementMarker": "OLD",  # != NEW → not skipped
         },
     }
     repos_map = {"alpha": {"url": "u-a", "defaultBranch": "main"}}
@@ -306,7 +298,6 @@ def test_process_item_happy_path_writes_back_and_transitions(monkeypatch):
     client.comment.assert_called_once()  # summary, no unknowns
     client.add_tag.assert_called_with(item, cfg.tag_done)
     client.remove_tag.assert_called_with(item, cfg.tag_trigger)
-    client.set_field.assert_called_once_with(42, cfg.marker_field, "NEW")
     client.patch_title.assert_not_called()
 
 
@@ -319,27 +310,11 @@ def test_process_item_reuses_cached_repo_via_symlink(tmp_path):
     assert (workspace / "alpha").resolve() == cache / "alpha"
 
 
-def test_process_item_skips_when_marker_unchanged(monkeypatch):
-    _patch_git_ops(monkeypatch)
-    _patch_marker(monkeypatch, sha="SAME")
-
-    item = {"id": 99, "fields": {"System.Tags": "repo:alpha", "Custom.RefinementMarker": "SAME"}}
-    repos_map = {"alpha": {"url": "u-a", "defaultBranch": "main"}}
-    client = _make_client()
-    cfg = _make_config()
-
-    refine.process_item(item, cfg, client, repos_map, logging.getLogger("t"))
-
-    client.patch_description.assert_not_called()
-    client.add_tag.assert_not_called()
-    client.set_field.assert_not_called()
-
 
 def test_process_item_unknowns_takes_blocked_branch(monkeypatch):
     _patch_git_ops(monkeypatch)
-    _patch_marker(monkeypatch, sha="X")
 
-    item = {"id": 7, "fields": {"System.Tags": "repo:alpha", "Custom.RefinementMarker": ""}}
+    item = {"id": 7, "fields": {"System.Tags": "repo:alpha"}}
     repos_map = {"alpha": {"url": "u-a", "defaultBranch": "main"}}
     client = _make_client()
     cfg = _make_config()
@@ -358,14 +333,11 @@ def test_process_item_unknowns_takes_blocked_branch(monkeypatch):
     client.add_tag.assert_called_with(item, cfg.tag_blocked)
     client.patch_description.assert_not_called()
     client.remove_tag.assert_not_called()
-    # Marker still gets set so the next run is idempotent.
-    client.set_field.assert_called_once()
 
 
 def test_process_item_calls_title_patch_when_allowed_and_provided(monkeypatch):
     _patch_git_ops(monkeypatch)
-    _patch_marker(monkeypatch, sha="X")
-    item = {"id": 7, "fields": {"System.Tags": "repo:alpha", "Custom.RefinementMarker": ""}}
+    item = {"id": 7, "fields": {"System.Tags": "repo:alpha"}}
     repos_map = {"alpha": {"url": "u-a", "defaultBranch": "main"}}
     client = _make_client()
     cfg = _make_config(allow_title_edits=True)
@@ -386,8 +358,7 @@ def test_process_item_calls_title_patch_when_allowed_and_provided(monkeypatch):
 
 def test_process_item_title_patch_skipped_when_disallowed(monkeypatch):
     _patch_git_ops(monkeypatch)
-    _patch_marker(monkeypatch, sha="X")
-    item = {"id": 7, "fields": {"System.Tags": "repo:alpha", "Custom.RefinementMarker": ""}}
+    item = {"id": 7, "fields": {"System.Tags": "repo:alpha"}}
     repos_map = {"alpha": {"url": "u-a", "defaultBranch": "main"}}
     client = _make_client()
     cfg = _make_config(allow_title_edits=False)  # default
@@ -410,9 +381,8 @@ def test_process_item_cleanup_runs_even_on_infraerror(monkeypatch):
     cleanup_called = []
     monkeypatch.setattr(refine.git_ops, "clone_all", lambda *a, **kw: None)
     monkeypatch.setattr(refine.git_ops, "cleanup", lambda ws: cleanup_called.append(ws))
-    _patch_marker(monkeypatch, sha="X")
 
-    item = {"id": 7, "fields": {"System.Tags": "repo:alpha", "Custom.RefinementMarker": ""}}
+    item = {"id": 7, "fields": {"System.Tags": "repo:alpha"}}
     repos_map = {"alpha": {"url": "u-a", "defaultBranch": "main"}}
     client = _make_client()
     cfg = _make_config()

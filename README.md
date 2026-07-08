@@ -10,14 +10,12 @@ findings back to the work item (description, AC, comment, tag transition).
    `refinement-done` / `refinement-blocked`.
 2. Parse `repo:<name>` tags on the item, resolve against `repos.jsonc`.
 3. Shallow-clone those repos into `/tmp/refine-<id>` (parallel within an item).
-4. Compute idempotency marker; skip if unchanged since last run.
 5. Run Pi (read-only permission profile) against workspace + work item text.
 6. Validate findings JSON (schema + every `sourceRef` resolves to a real file).
-7. Patch description / AC inside an idempotent marker block; comment once;
+7. Patch description / AC inside a bounded HTML-comment block; comment once;
    transition `needs-refinement` → `refinement-done` (or `refinement-blocked`
    on unknowns / validation failure).
-8. Store the marker in `MARKER_FIELD` (default `Custom.RefinementMarker`).
-9. Exit 0 when the queue is empty.
+8. Exit 0 when the queue is empty.
 
 ## `sourceRef` format
 
@@ -27,9 +25,7 @@ findings back to the work item (description, AC, comment, tag transition).
 
 ## Prereqs
 
-- ADO organization + project. Work item type must have a custom field
-  matching `MARKER_FIELD` (default `Custom.RefinementMarker`) — create it
-  before first run or rename the env var.
+- ADO organization + project.
 - Tags exist in ADO: `needs-refinement`, `refinement-done`, `refinement-blocked`.
   Override with `TAG_TRIGGER` / `TAG_DONE` / `TAG_BLOCKED` if you use different names.
 - A PAT scoped to **Work Items Read & Write** and **Code Read**.
@@ -56,11 +52,9 @@ cp .env.example .env
 | `src/git_ops.py`                        | Concurrent shallow clone with per-clone credential header |
 | `src/pi_runner.py`                      | Pi CLI subprocess wrapper                                |
 | `src/validate.py`                       | JSON-schema + `sourceRef` existence check                |
-| `src/marker.py`                         | Idempotency hash (title + description + sorted HEAD SHAs) |
 | `src/schema/findings.schema.json`       | Findings contract                                        |
 | `src/prompts/refine.prompt.tmpl.md`     | Pi prompt template                                       |
 | `src/repos.jsonc`                       | `repo:<tag>` → git URL mapping (structural, not env)      |
-| `pi-permissions.refinement.jsonc`       | Locked-down Pi permission profile                        |
 | `.env.example`                          | Every configurable env var, documented                   |
 | `.env`                                  | Real values, git-ignored                                 |
 | `Dockerfile`                            | Container image                                          |
@@ -79,9 +73,7 @@ pipeline run. Only auth / clone / Pi failures should fail the container.
 
 ## Self-checks
 
-Each module ships with a tiny `__main__` self-check (run `python src/marker.py`,
-`python src/validate.py`, etc.). They are framework-free, fail-fast, and exist so
-the lazy code isn't blind.
+Each module ships with a tiny `__main__` self-check (run `python src/validate.py` etc.). They are framework-free, fail-fast, and exist so the lazy code isn't blind.
 
 ## Open questions (flagged from the brief, deferred from v1)
 

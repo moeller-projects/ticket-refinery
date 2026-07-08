@@ -1,4 +1,4 @@
-"""Make project root importable so tests can `import refine`, `import marker`, etc."""
+"""Make project root importable so tests can import project modules."""
 import sys
 from pathlib import Path
 

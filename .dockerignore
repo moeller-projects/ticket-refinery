@@ -1,0 +1,15 @@
+.git
+.github
+.codegraph
+docs
+tests
+*.ps1
+__pycache__
+*.pyc
+.env
+.env.*
+*.md
+LICENSE
+.gitignore
+Dockerfile
+.dockerignore

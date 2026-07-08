@@ -34,7 +34,7 @@ Get-Content $envPath | ForEach-Object {
 $required = @(
     'ADO_ORG','ADO_PROJECT','ADO_PAT',
     'TAG_TRIGGER','TAG_DONE','TAG_BLOCKED',
-    'MARKER_FIELD','CLONE_DEPTH','PI_MODEL','PI_PERMISSIONS_FILE'
+    'CLONE_DEPTH','PI_MODEL'
 )
 foreach ($k in $required) {
     $v = $env[$k]
@@ -43,7 +43,7 @@ foreach ($k in $required) {
 }
 
 # --- inline # comment pollution (the bug from this session) ---
-foreach ($k in @('ADO_PAT','ADO_ORG','ADO_PROJECT','PI_MODEL','MARKER_FIELD')) {
+foreach ($k in @('ADO_PAT','ADO_ORG','ADO_PROJECT','PI_MODEL')) {
     $v = $env[$k]
     if ($v -and $v -match '\s#') {
         Test-Check "env: $k clean" $false 'trailing # comment — strip it from .env'

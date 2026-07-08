@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ticket-refinery — onboarding</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{font:16px/1.55 system-ui,sans-serif;max-width:980px;margin:2rem auto;padding:0 1rem}code,pre{font-family:ui-monospace,monospace}pre{background:#f4f4f4;padding:1rem;overflow:auto}.mermaid{margin:1rem 0}</style>
+</head>
+<body>
+<h1>ticket-refinery — onboarding handoff</h1>
+<p>Audience: new teammate. Goal: run, debug, and change pipeline safely.</p>
+<h2>What this is</h2>
+<p>Containerized pipeline that reads ADO work items tagged <code>needs-refinement</code>, clones repos, asks Pi to produce structured findings, validates output, writes back description / acceptance criteria, comments, and moves tags.</p>
+<h2>System overview</h2>
+<div class="mermaid">flowchart LR
+  A[.env + auth.json] --> B[run.ps1]
+  B --> C[container]
+  C --> D[src/refine.py]
+  D --> E[ADO REST]
+  D --> F[git clone]
+  D --> G[Pi CLI]
+  D --> H[src/validate.py]
+</div>
+<h2>Repo map</h2>
+<ul>
+<li><code>src/refine.py</code> orchestrator</li>
+<li><code>src/ado_client.py</code> ADO REST</li>
+<li><code>src/git_ops.py</code> shallow clone helpers</li>
+<li><code>src/pi_runner.py</code> Pi subprocess wrapper</li>
+<li><code>src/validate.py</code> JSON schema + sourceRef checks</li>
+<li><code>src/prompts/refine.prompt.tmpl.md</code> Pi prompt</li>
+<li><code>src/schema/findings.schema.json</code> output contract</li>
+<li><code>src/repos.jsonc</code> repo registry</li>
+</ul>
+<h2>Setup</h2>
+<ul>
+<li>Create <code>.env</code> from <code>.env.example</code></li>
+<li>Set <code>ADO_ORG</code>, <code>ADO_PROJECT</code>, auth, tags, <code>PI_MODEL</code></li>
+<li>Ensure <code>~/.pi/agent/auth.json</code> exists</li>
+<li>Use Docker or Podman</li>
+</ul>
+<h2>First run</h2>
+<pre><code>./check.ps1
+./run.ps1</code></pre>
+<h2>Pipeline flow</h2>
+<div class="mermaid">sequenceDiagram
+  participant H as Host
+  participant C as Container
+  participant A as ADO
+  participant P as Pi
+  H->>C: run with .env + auth.json
+  C->>A: query tagged items
+  C->>C: clone repos + build prompt
+  C->>P: pi -p --tools read,bash,grep,find,ls
+  P-->>C: JSON findings
+  C->>C: validate schema + sourceRefs
+  C->>A: patch description / AC + comment
+</div>
+<h2>ADO contracts</h2>
+<ul>
+<li>Input tag: <code>needs-refinement</code></li>
+<li>Success tag: <code>refinement-done</code></li>
+<li>Blocked tag: <code>refinement-blocked</code></li>
+<li>Permissions: Work Items Read &amp; Write + Code Read</li>
+<li>Repo mapping: <code>repo:&lt;name&gt;</code> tags must exist in <code>src/repos.jsonc</code></li>
+</ul>
+<h2>Pi integration</h2>
+<p>Pi runs as CLI subprocess with read-only tools: <code>read,bash,grep,find,ls</code>. It must emit JSON that matches <code>src/schema/findings.schema.json</code>.</p>
+<h2>Config reference</h2>
+<p>Main vars: <code>ADO_ORG</code>, <code>ADO_PROJECT</code>, <code>ADO_PAT</code>, <code>TAG_TRIGGER</code>, <code>TAG_DONE</code>, <code>TAG_BLOCKED</code>, <code>CLONE_DEPTH</code>, <code>PI_MODEL</code>, <code>PI_TIMEOUT_SECONDS</code>, <code>TARGET_LANGUAGE</code>, <code>CONTAINER_ENGINE</code>.</p>
+<h2>Validation &amp; exit</h2>
+<ul><li><code>0</code> queue drained / handled</li><li><code>1</code> infra failure</li><li><code>2</code> launcher failure</li></ul>
+<h2>Gotchas</h2>
+<ul>
+<li>Inline <code>#</code> comments in <code>.env</code> break parsing.</li>
+<li>Podman rootless may need forced DNS.</li>
+<li>Missing ADO tag or custom field breaks the run.</li>
+</ul>
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+mermaid.initialize({startOnLoad:true,securityLevel:'loose'});
+</script>
+</body>
+</html>
