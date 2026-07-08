@@ -1,0 +1,7 @@
+{
+  "Laekkerai.Ordering": {
+    "url": "https://aveato@dev.azure.com/aveato/Laekker.Kitchen/_git/Laekkerai.Ordering",
+    "defaultBranch": "dev",
+  },
+  // add entries here as repos are onboarded; unresolved repo:<tag> = hard fail, not a guess
+}
