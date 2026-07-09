@@ -15,7 +15,8 @@ def schema_and_prompt(tmp_path):
     prompt.write_text(
         "WS={workspace} TITLE={title} DESC={description} "
         "AC={acceptance_criteria} REPOS={repo_list} SCHEMA={schema} "
-        "COMMENTS=[{comments}] LANG={target_language}"
+        "COMMENTS=[{comments}] LANG={target_language} "
+        "CTX={repo_context}"
     )
     return schema, prompt
 
@@ -66,7 +67,7 @@ def test_render_prompt_replaces_placeholders(schema_and_prompt):
 
 def test_render_prompt_handles_missing_description_and_ac(schema_and_prompt):
     svc = ContextService(client=_make_client(), schema_path=schema_and_prompt[0], prompt_path=schema_and_prompt[1])
-    out = svc.render_prompt({"fields": {"System.Title": "T"}}, [], Path("/w"), "")
+    out = svc.render_prompt(item={"fields": {"System.Title": "T"}}, repo_names=[], workspace=Path("/w"), comments_text="")
     # No description/AC fields → empty substitute.
     assert "DESC=" in out
     assert "AC=" in out
@@ -79,8 +80,35 @@ def test_render_prompt_uses_target_language(schema_and_prompt):
         prompt_path=schema_and_prompt[1],
         target_language="German",
     )
-    out = svc.render_prompt({"fields": {"System.Title": "T"}}, [], Path("/w"), "")
+    out = svc.render_prompt(item={"fields": {"System.Title": "T"}}, repo_names=[], workspace=Path("/w"), comments_text="")
     assert "LANG=German" in out
+
+
+def test_render_prompt_includes_repo_context_section(schema_and_prompt):
+    """Curated RepositoryContext is spliced into the prompt via the
+    `repo_context_section` parameter — the renderer never calls Graphify."""
+    svc = ContextService(client=_make_client(), schema_path=schema_and_prompt[0], prompt_path=schema_and_prompt[1])
+    out = svc.render_prompt(
+        item={"fields": {"System.Title": "T"}},
+        repo_names=[],
+        workspace=Path("/w"),
+        comments_text="",
+        repo_context_section="CURATED-MARKDOWN",
+    )
+    assert "CTX=CURATED-MARKDOWN" in out
+
+
+def test_render_prompt_omits_repo_context_when_blank(schema_and_prompt):
+    """Default empty string ⇒ {repo_context} placeholder resolves to nothing."""
+    svc = ContextService(client=_make_client(), schema_path=schema_and_prompt[0], prompt_path=schema_and_prompt[1])
+    out = svc.render_prompt(
+        item={"fields": {"System.Title": "T"}},
+        repo_names=[],
+        workspace=Path("/w"),
+        comments_text="",
+    )
+    assert "CTX=" in out
+    assert "{repo_context}" not in out
 
 
 def test_build_inputs_loads_then_renders(schema_and_prompt):
@@ -92,3 +120,15 @@ def test_build_inputs_loads_then_renders(schema_and_prompt):
         workspace=Path("/w"),
     )
     assert "COMMENTS=[X" in out and "hi]" in out
+
+
+def test_build_inputs_splices_repo_context(schema_and_prompt):
+    client = _make_client()
+    svc = ContextService(client=client, schema_path=schema_and_prompt[0], prompt_path=schema_and_prompt[1])
+    out = svc.build_inputs(
+        item={"id": 9, "fields": {"System.Title": "T"}},
+        repo_names=["a"],
+        workspace=Path("/w"),
+        repo_context_section="CURATED-BLOCK",
+    )
+    assert "CTX=CURATED-BLOCK" in out

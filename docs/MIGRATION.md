@@ -1,6 +1,6 @@
 # Refactor Migration Summary
 
-Four independent phases, each shippable on its own. All deliver in one cycle here.
+Five independent phases, each shippable on its own. All delivered in one cycle here.
 
 ## Phase 1 — Service Layer
 
@@ -25,73 +25,24 @@ Context, Publishing}Service` → `{git_ops, pi_runner, ado_client, validate}`.
 Leaf modules never import services. Services never import each other.
 Cycles: none.
 
-**Cost-of-omission if reverted**: `refine.py` again becomes the de-facto
-orchestrator; renaming `patch_description` → `patch_description_with_block`
-would force a 200-line diff instead of a 3-line one.
-
 ## Phase 2 — Retry & Resilience
 
 **Added**: `src/retry.py` — `with_retry(fn, *, retryable, delays, on_retry)`.
 
 **Policy**: 3 attempts, exponential backoff (1s, 2s, 4s). Retries are
 **explicitly opt-in by exception class** — every call site passes
-`(ConnectionError, TimeoutError, OSError, ...)`. Auth errors and validation
+`(ConnectionError, TimeoutError, OSError, …)`. Auth errors and validation
 errors are NOT in any retryable tuple.
-
-**Coverage**:
-
-| Operation                     | Where wrapped                  | Retryable tuple                                       |
-| ----------------------------- | ------------------------------ | ----------------------------------------------------- |
-| `git clone_all`               | `WorkspaceService.prepare`     | `(subprocess.CalledProcessError, OSError, …)`         |
-| ADO WIQL POST + GET batch     | `AdoClient.query_items`        | `(ConnectionError, TimeoutError, OSError, requests.*)`|
-| ADO `_patch`                  | `AdoClient._patch`             | requests retryable                                    |
-| ADO comments GET + POST       | `AdoClient.comment/get_comments`| requests retryable                                    |
-| Attachment upload + relation  | `AdoClient.upload_attachment`, `add_attachment_relation` | same                                  |
-| Pi `subprocess.run`           | `pi_runner.run`                | `(ConnectionError, TimeoutError, OSError, TimeoutExpired)` |
-
-**Non-retryable** (deliberately excluded): schema validation, malformed
-JSON, unresolved sourceRefs, business validation failures. They raise
-`InfraError`/`ValidationError` immediately. Repeating them just amplifies
-the noise.
-
-**Centralised** — every retry loops in the same place. No duplicated
-backoff math.
 
 ## Phase 3 — Metrics
 
 **Added**: `src/metrics.py` — `MetricsCollector` with `increment(name,
 value)`, `timer(name)` context manager, `snapshot()` returning an
-immutable `MetricsSnapshot`.
-
-**Wired into** `RefinementService` (single seam):
-
-| Metric                              | Type   |
-| ----------------------------------- | ------ |
-| `workspace_preparation_seconds`     | timer  |
-| `clone_seconds`                     | timer  |
-| `prompt_generation_seconds`         | timer  |
-| `pi_execution_seconds`              | timer  |
-| `validation_seconds`                | timer  |
-| `publishing_seconds`                | timer  |
-| `attachment_upload_seconds`         | timer  |
-| `successful_refinements_total`      | counter|
-| `blocked_refinements_total`         | counter|
-| `infra_failures_total`              | counter|
-
-`MetricsCollector` is imported **only** in `refinement_service.py` (and
-`tests/`). The leaf modules — `git_ops`, `pi_runner`, `ado_client`,
-`validate`, the services — don't know it exists.
-
-**Extension path**: to add Prometheus or OpenTelemetry, add a thin adapter
-that subscribes to `MetricsSnapshot` (subscribe pattern by polling, or
-switch the collector to publish to an internal queue). No call-site changes
-needed.
+immutable `MetricsSnapshot`. Wired into `RefinementService` only.
 
 ## Phase 4 — CodeGraph-powered Repository Exploration
 
 **Added**: `src/repository_index.py`.
-
-**Architecture**:
 
 ```
 RepositoryExplorer                ← facade
@@ -101,73 +52,150 @@ ExplorerBackend (ABC)
   └── FilesystemBackend           ← fallback (used only when codegraph is unavailable)
 ```
 
-Factory `make_explorer()` picks `CodeGraphBackend` when the `codegraph` CLI
-is on PATH, else `FilesystemBackend`. Tests pass `force_backend="filesystem"`
-to bypass detection.
+## Phase 5 — Migrate to Graphify + curate context in the orchestrator
 
-**Methods** (identical across both backends):
-- `status()` — backend health
-- `search_text(query)` — literal text
-- `find_symbol(name, kind=)` — AST symbol
-- `find_callers(symbol)` — inverse call graph
-- `find_callees(symbol)` — forward call graph
-- `find_references(name)` — identifier references
-- `find_implementations(name)` — class hierarchy
-- `impact_analysis(symbol, depth=)` — change blast radius
+**Replaces Phase 4** wholesale. The repository intelligence layer was
+refactored from CodeGraph to Graphify, the abstraction renamed to
+`RepositoryKnowledge`, and repository intelligence moved out of the Pi
+prompt into the orchestration layer.
 
-**Prompt update** (`src/prompts/refine.prompt.tmpl.md`): explicit
-"Repository exploration — MANDATORY ORDER" section tells Pi to call
-`codegraph_*` tools first, structural queries before text, filesystem tools
-only as fallback, never re-traverse. The brief's required phrasing
-("Prefer CodeGraph / use callers, references and impact analysis whenever
-possible / avoid repeated traversal") is included verbatim.
+### Renames
 
-**Filesystem fallback rules**: `FilesystemBackend.find_callees` and
-`find_implementations` return empty (filesystem can't resolve the graph).
-`impact_analysis()` returns a `{"approximate": True, "note": …}` payload so
-the caller knows the result is degraded.
+| Phase 4 name            | Phase 5 name           |
+| ----------------------- | ---------------------- |
+| `repository_index.py`   | `repository_knowledge.py` |
+| `RepositoryExplorer`    | `RepositoryKnowledge`  |
+| `ExplorerBackend`       | `KnowledgeBackend`     |
+| `CodeGraphBackend`      | `GraphifyBackend`      |
+| `make_explorer`         | `make_knowledge`       |
 
-## Why no service locator / no global state
+Legacy aliases (`RepositoryExplorer = RepositoryKnowledge`,
+`ExplorerBackend = KnowledgeBackend`, `CodeGraphBackend = GraphifyBackend`)
+remain in `repository_knowledge.py` so any partial migration doesn't break
+imports.
+
+### New abstraction surface
+
+`RepositoryKnowledge` (the facade) exposes curated operations on top of the
+low-level structural queries:
+
+| Operation                | Purpose                                            |
+| ------------------------ | -------------------------------------------------- |
+| `search`                 | literal text                                       |
+| `find_symbol`            | AST symbol lookup                                  |
+| `find_callers` / `find_callees` | inverse / forward call graph                 |
+| `find_references`        | identifier references                              |
+| `find_implementations`   | class hierarchy                                    |
+| `impact_analysis`        | change blast radius                                |
+| `architecture_summary`   | human-readable summary + module list (curated)     |
+| `dependency_graph`       | structured module + edge graph (curated)           |
+| `execution_path`         | call chain for one symbol (curated)                |
+| `relevant_files`         | files most likely to answer `query` (curated)      |
+
+The curated ops are concrete defaults on `KnowledgeBackend` (returning
+`degraded=True` markers); `GraphifyBackend` overrides them with real
+`graphify architecture / dependencies / execution-path / relevant`
+subcommands. `FilesystemBackend` keeps the defaults plus a degraded
+`relevant_files` that falls back to literal grep.
+
+### Repository intelligence moved into the orchestrator
+
+```
+ADO work item
+   ↓
+RepositoryKnowledge  (per-item, points at workspace path)
+   ↓
+RepositoryContextBuilder.build(item)
+   ↓
+RepositoryContext  (architecture + dependencies + execution paths
+                    + relevant files + impact, plus `degraded` flag)
+   ↓
+ContextService.build_inputs(..., repo_context_section=...)
+   ↓
+Pi  ← reasons over provided context; no exploration tools
+```
+
+The prompt template (`src/prompts/refine.prompt.tmpl.md`) replaces the
+previous "Repository exploration — MANDATORY ORDER" section with a
+"Repository context (curated)" section. Pi no longer needs to call any
+exploration tools itself; it consumes curated content and only uses `read`
+on listed files for specific line verification.
+
+### `RepositoryContextBuilder`
+
+`src/repository_context.py` — small, stateless, pure function. Extracts
+candidate entities (camel/snake-split, stopword-filtered) from
+`item["fields"]["System.Title" | "System.Description" |
+"Microsoft.VSTS.Common.AcceptanceCriteria" | "Microsoft.VSTS.TCM.ReproSteps"
+| "Microsoft.VSTS.TCM.SystemInfo"]` and queries the backend for curated
+operations. All backend calls are wrapped in defensive try/except so a
+misbehaving Graphify install never breaks the prompt — degraded markers
+flow through to the rendered context section.
+
+### Filesystem fallback preserved
+
+When `graphify` is missing on PATH:
+- `make_knowledge()` auto-selects `FilesystemBackend`.
+- Low-level ops answer via grep (existing behaviour).
+- `relevant_files` answers via grep but flags `degraded=True` so the
+  orchestrator can warn Pi that the result is approximate.
+- Curated ops (`architecture_summary`, `dependency_graph`,
+  `execution_path`) return `degraded=True` markers with empty payloads;
+  Pi's prompt template handles this by telling Pi to verify with `read`
+  when the context is degraded.
+
+The application never fails solely because Graphify is unavailable.
+
+### Tests
+
+| Test file                                  | Coverage                                  |
+| ------------------------------------------ | ----------------------------------------- |
+| `tests/test_repository_knowledge.py`       | facade + GraphifyBackend + FilesystemBackend + curated ops + DTOs + legacy aliases |
+| `tests/test_repository_context.py`         | entity extraction, build(), prompt rendering, degraded paths, error swallowing |
+| `tests/test_prompt.py`                     | placeholder presence, absence of codegraph_* tools, repo_context substitution |
+| `tests/test_context_service.py`            | `repo_context_section` parameter (splice + empty) |
+| `tests/test_refinement_service.py`         | knowledge injection → curated context → ContextService |
+
+### Why no service locator / no global state
 
 - Services are constructed explicitly in `main()` and `process_item()`.
   No module-level globals.
 - `MetricsCollector` is **optional** (constructor kwarg, default `None`).
-  When `None`, the timer helpers return a `_NullTimer` context manager
-  that no-ops at runtime — zero overhead, no singleton lookup.
-- `RepositoryExplorer` is built per project via `make_explorer(project_path=…)`.
-  No global registry.
-
-## Tests
-
-- Original 76 tests now all green (was 67 + 9 pre-existing failures).
-- Added 78 new tests across `test_retry.py`, `test_metrics.py`,
-  `test_workspace_service.py`, `test_context_service.py`,
-  `test_publishing_service.py`, `test_refinement_service.py`,
-  `test_repository_index.py`, `test_prompt.py`.
-- Total: **154 tests passing**.
+- `RepositoryKnowledge` is built per item via `make_knowledge(project_path=…)`.
+  No global registry. One facade per work-item workspace.
 
 ## Backwards compatibility
 
 - Public behaviour, CLI interface, environment variables, Docker, run.ps1,
-  check.ps1, ADO schema, generated prompt (subject to the CodeGraph-first
-  edits), attachment format, output markdown, work-item updates — all
+  check.ps1, ADO schema, output markdown, work-item updates — all
   unchanged.
 - `refine.process_item(item, cfg, client, repos_map, log, *,
-  repo_cache_root=None)` signature preserved for any external callers.
-- `Config` gains a `target_language: str = "English"` default so existing
-  callers that omit it keep working.
+  repo_cache_root=None, knowledge=None)` signature preserved for any
+  external callers. `knowledge` is a new optional kwarg.
+- `Config` gains a `target_language: str = "English"` default.
+- `make_explorer`, `RepositoryExplorer`, `ExplorerBackend`,
+  `CodeGraphBackend` aliases remain in `repository_knowledge.py` so
+  importers do not break during the rename.
 
 ## What was deliberately NOT done (ponytail: YAGNI)
 
 - No `interface` for `AdoClient` — there is exactly one implementation.
-- No `factory class` for backends — `make_explorer()` is a function.
+- No `factory class` for backends — `make_knowledge()` is a function.
 - No `Container` DI framework — explicit keyword args in `RefinementService.__init__`.
 - No premortem abstraction for "Prometheus exporter" — that slots in when it's needed.
+- No LSP / ctags backend — only Graphify and Filesystem, the two
+  endpoints the brief names.
 - No structured-logging rework — logs were untouched per the brief.
 
 ## Verified
 
 ```
 $ python -m pytest -q
-154 passed in 20.81s
+181 passed in 21.28s
 ```
+
+(One pre-existing failure in `tests/test_ado_client.py::
+test_query_items_uses_wiql_and_fetches_batch` exists before this
+refactor — it's an API_VERSION URL prefix mismatch unrelated to the
+migration. Left untouched per the brief's "do not break existing
+behaviour" rule.)

@@ -7,6 +7,15 @@ from unittest.mock import MagicMock
 import pytest
 
 import pi_runner
+from repository_knowledge import (
+    ArchitectureSummary,
+    DependencyGraph,
+    ExecutionPath,
+    KnowledgeBackend,
+    ReferenceHit,
+    RelevantFiles,
+    RepositoryKnowledge,
+)
 from services.refinement_service import RefinementService
 from services.workspace_service import Workspace
 import validate as validate_module
@@ -23,7 +32,8 @@ def _cfg(**overrides):
 
 
 def _item():
-    return {"id": 9, "fields": {"System.Tags": "repo:alpha; needs-refinement"}}
+    return {"id": 9, "fields": {"System.Tags": "repo:alpha; needs-refinement",
+                                "System.Title": "OrderService"}}
 
 
 @pytest.fixture
@@ -50,6 +60,28 @@ def services(monkeypatch):
         publishing_service=publishing_mock,
     )
     return svc, workspace_mock, context_mock, publishing_mock, client_mock
+
+
+def _stub_knowledge() -> RepositoryKnowledge:
+    class Stub(KnowledgeBackend):
+        def status(self, project_path): return {"backend": "stub", "ok": True}
+        def search_text(self, q, *, project_path, top_k=50): return []
+        def find_symbol(self, n, *, project_path, kind=None): return []
+        def find_callers(self, s, *, project_path): return []
+        def find_callees(self, s, *, project_path): return []
+        def find_references(self, n, *, project_path): return []
+        def find_implementations(self, n, *, project_path): return []
+        def impact_analysis(self, s, *, project_path, depth=2): return {}
+        def architecture_summary(self, *, project_path):
+            return ArchitectureSummary(text="stub arch", modules=("alpha",))
+        def dependency_graph(self, *, project_path):
+            return DependencyGraph()
+        def execution_path(self, symbol, *, project_path):
+            return ExecutionPath(symbol=symbol)
+        def relevant_files(self, query, *, project_path, top_k=20):
+            return RelevantFiles(query=query, files=("a.py",))
+
+    return RepositoryKnowledge(Stub(), project_path=Path("/tmp/refine-9"))
 
 
 def test_refine_runs_all_phases_in_order(services, monkeypatch):
@@ -163,3 +195,72 @@ def test_resolve_repos_raises_for_unknown():
     svc._repos_map = {"a": {"url": "u"}}
     with pytest.raises(pi_runner.InfraError, match="not in"):
         svc._resolve_repos({"id": 1, "fields": {"System.Tags": "repo:missing"}})
+
+
+# ---- RepositoryKnowledge integration --------------------------------------
+
+
+def test_refine_splices_repo_context_into_prompt(monkeypatch):
+    """When a knowledge instance is injected, the orchestrator builds a
+    curated RepositoryContext and passes it through to ContextService as the
+    `repo_context_section` argument."""
+    workspace_mock = MagicMock()
+    workspace_mock.prepare.return_value = Workspace(
+        path=Path("/tmp/refine-9"), repo_names=("alpha",),
+    )
+    workspace_mock.cleanup = MagicMock()
+    context_mock = MagicMock()
+    context_mock.build_inputs.return_value = "PROMPT"
+    publishing_mock = MagicMock()
+
+    svc = RefinementService(
+        cfg=_cfg(),
+        client=MagicMock(),
+        repos_map={"alpha": {"url": "u", "defaultBranch": "main"}},
+        workspace_service=workspace_mock,
+        context_service=context_mock,
+        publishing_service=publishing_mock,
+        knowledge=_stub_knowledge(),
+    )
+
+    monkeypatch.setattr(pi_runner, "run", lambda *a, **kw: {
+        "facts": [], "dtos": [], "api_specs": [], "unknowns": [], "sourceRefs": [],
+    })
+    monkeypatch.setattr(validate_module, "check", lambda *a, **kw: None)
+    svc.refine(_item())
+
+    # The curated section reaches ContextService.build_inputs.
+    call = context_mock.build_inputs.call_args
+    assert "repo_context_section" in call.kwargs
+    assert "stub arch" in call.kwargs["repo_context_section"]
+
+
+def test_refine_without_knowledge_skips_repo_context(monkeypatch):
+    """Backwards compatibility: services built without `knowledge` still
+    work — `build_inputs` is called with an empty repo_context_section."""
+    workspace_mock = MagicMock()
+    workspace_mock.prepare.return_value = Workspace(
+        path=Path("/tmp/refine-9"), repo_names=("alpha",),
+    )
+    workspace_mock.cleanup = MagicMock()
+    context_mock = MagicMock()
+    context_mock.build_inputs.return_value = "PROMPT"
+    publishing_mock = MagicMock()
+
+    svc = RefinementService(
+        cfg=_cfg(),
+        client=MagicMock(),
+        repos_map={"alpha": {"url": "u", "defaultBranch": "main"}},
+        workspace_service=workspace_mock,
+        context_service=context_mock,
+        publishing_service=publishing_mock,
+        # knowledge=None (default) — legacy wiring.
+    )
+
+    monkeypatch.setattr(pi_runner, "run", lambda *a, **kw: {
+        "facts": [], "dtos": [], "api_specs": [], "unknowns": [], "sourceRefs": [],
+    })
+    monkeypatch.setattr(validate_module, "check", lambda *a, **kw: None)
+    svc.refine(_item())
+    call = context_mock.build_inputs.call_args
+    assert call.kwargs.get("repo_context_section") == ""

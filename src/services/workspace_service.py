@@ -96,7 +96,7 @@ class WorkspaceService:
         if on_clone_duration is not None:
             on_clone_duration(_now() - clone_started)
 
-        self._sync_codegraph_indexes(repos, cache_root)
+        self._sync_graphify_indexes(repos, cache_root)
 
         if cache_root != workspace:
             self._link_repo_cache(repos, cache_root, workspace)
@@ -121,12 +121,17 @@ class WorkspaceService:
             shutil.rmtree(self._cache_root, ignore_errors=True)
 
     @staticmethod
-    def _sync_codegraph_indexes(repos: list[dict], cache_root: Path) -> None:
-        """Refresh CodeGraph sqlite after clone. Safe no-op if CLI absent.
+    def _sync_graphify_indexes(repos: list[dict], cache_root: Path) -> None:
+        """Refresh Graphify index after clone. Safe no-op if CLI absent.
 
-        CodeGraph index is a runtime artifact; it is never checked in.
-        Re-index here so later `codegraph_*` queries (and Python repo exploration)
-        hit the local sqlite DB inside cloned repos.
+        Graphify writes a parsed AST graph at `<repo>/graphify-out/graph.json`
+        via `graphify extract --code-only --no-cluster`. We run that with
+        `--code-only` so no LLM API key is required, and `--no-cluster` to
+        skip the LLM-driven community-labeling phase.
+
+        The index is a runtime artefact; it is never checked in. Re-index here
+        so later `graphify` queries (and the GraphifyBackend) hit the local
+        store inside cloned repos.
         """
         for repo in repos:
             repo_path = cache_root / repo["name"]
@@ -134,18 +139,19 @@ class WorkspaceService:
                 continue
             try:
                 subprocess.run(
-                    ["codegraph", "init"],
+                    ["graphify", "extract", str(repo_path),
+                     "--out", str(repo_path), "--code-only", "--no-cluster"],
                     cwd=str(repo_path),
                     capture_output=True,
                     text=True,
                     check=True,
-                    timeout=600,
+                    timeout=900,
                 )
             except FileNotFoundError:
-                # CodeGraph not installed; filesystem fallback still works.
+                # Graphify not installed; filesystem fallback still works.
                 return
             except subprocess.CalledProcessError as e:
-                log.warning("item repo=%s codegraph sync failed: %s", repo["name"], e)
+                log.warning("item repo=%s graphify index failed: %s", repo["name"], e)
 
     @staticmethod
     def _link_repo_cache(repos: list[dict], cache_root: Path, workspace: Path) -> None:

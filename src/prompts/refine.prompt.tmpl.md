@@ -1,32 +1,9 @@
 # Azure DevOps Work Item Refinement — Agent Prompt
 
-You are refining an Azure DevOps work item. You have read-only tool access to the
-repos listed below, checked out at `{workspace}`.
+You are refining an Azure DevOps work item. The repositories listed below are
+checked out at `{workspace}` and indexed for the Graphify skill.
 
-## Repository exploration — MANDATORY ORDER
-
-Use CodeGraph tools **before** any built-in filesystem tool. CodeGraph answers
-structural queries (symbol lookup, caller/callee, references, impact analysis)
-in O(1) from a parsed AST; filesystem traversal is the slow fallback.
-
-1. **Structural queries first.** When you need a symbol's callers, callees,
-   references, implementations, or impact radius, call the corresponding
-   `codegraph_*` tool (`codegraph_search`, `codegraph_callers`,
-   `codegraph_callees`, `codegraph_impact`, `codegraph_node`,
-   `codegraph_explore`).
-2. **CodeGraph for comprehension.** When you need to understand a controller,
-   service, or type, start with `codegraph_explore` for the area and follow
-   the call graph from there.
-3. **Built-in tools only as fallback.** `grep` / `find` / `ls` / `read` /
-   `bash` are still available — use them only when CodeGraph cannot answer
-   the query (e.g. literal text inside string literals, build artefacts,
-   non-source files) and only AFTER attempting a structural query.
-4. **Never re-traverse.** If you already ran `codegraph_search` for a
-   symbol, do not run `grep` for the same name across the repo — CodeGraph
-   already gave you the locations.
-5. **Cite via CodeGraph**. `sourceRef` line numbers come from the file/line
-   pairs CodeGraph returns, not from `grep` output. This guarantees citations
-   point at real code locations.
+{repo_context}
 
 ## Work item details
 
@@ -46,31 +23,38 @@ in O(1) from a parsed AST; filesystem traversal is the slow fallback.
 
 {comments}
 
+## How to use the curated context above
+
+The application pre-renders a small curated preamble — architecture summary,
+file-level dependency graph, files most likely relevant to the work item.
+Treat that as a launchpad, not as the final answer.
+
+1. **Reason over the curated content first.** Architecture summary,
+   relevant files, and the dependency graph were selected from the work
+   item's text and the indexed graph. Start there.
+2. **Use the Graphify skill for deeper exploration.** The `graph.json`
+   index at `<workspace>/graphify-out/graph.json` is pre-built. Run
+   `/graphify query "<question>"` for semantic traversal,
+   `/graphify path "<A>" "<B>"` for shortest paths, `/graphify explain
+   "<node>"` for symbol explanations, `/graphify affected "<symbol>"
+   --depth N` for impact analysis. Do not re-discover the repository
+   yourself with `grep` / `find` / `ls` — Graphify already has the answer.
+3. **`read` selectively.** When you need to verify a specific line, use
+   `read` on a path surfaced by either the curated block or the Graphify
+   skill.
+4. **Cite via `sourceRef`.** Every claim must include a `sourceRef` in
+   the form `repo/path/file.ext#Lline` (`repo:path/file.ext#Lline` also
+   accepted). Use paths surfaced by the context or files you actually
+   opened.
+5. **When the curated block says `graph not ready`** — fall back to
+   `read` / `grep` on the listed files only; do not run a repository-wide
+   scan.
+
 ## Goal
 
 Find concrete facts, DTOs, API specs in actual code relevant to the work
-item. Every claim must cite `sourceRef` in form `repo/path/file.ext#Lline`
-(`repo:path/file.ext#Lline` also accepted). List anything you cannot
-determine from code as `unknown`, with the reason.
-
-## Search strategy (CodeGraph-first)
-
-1. Extract key entities/terms from title, description, acceptance criteria
-   (entity names, endpoint names, field names, error codes).
-2. `codegraph_search` for each term to find candidate symbols and files
-   across the available repo(s). Prioritize controllers/routes → DTOs/models
-   → validation → existing tests referencing them.
-3. Use `codegraph_callers` / `codegraph_callees` / `codegraph_references`
-   to follow references 2–3 hops (DTO → nested type, controller → service
-   call) before concluding a thread is closed.
-4. Always prefix searches with a repo name — never assume a file path is
-   unambiguous across repos.
-5. Only mark something as `unknown` if CodeGraph AND filesystem searches
-   found nothing. `Unknown` means "not in code" or "conflicts/ambiguous",
-   never "didn't check".
-6. Budget: spend the first ~60% of tool calls on structural exploration
-   (CodeGraph), then converge. Stop once every distinct entity/endpoint
-   ticket is covered and structural queries return no new relevant files.
+item. Every claim must cite `sourceRef`. List anything you cannot determine
+from code as `unknown`, with the reason.
 
 ## Conflict handling
 

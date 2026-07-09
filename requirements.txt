@@ -1,2 +1,3 @@
 requests>=2.31
 jsonschema>=4.20
+graphifyy>=0.9,<1.0

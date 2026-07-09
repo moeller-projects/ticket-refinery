@@ -38,6 +38,7 @@ from services.publishing_service import (
 )
 from services.refinement_service import RefinementService
 from services.workspace_service import WorkspaceService
+from repository_knowledge import RepositoryKnowledge, make_knowledge
 
 ROOT = Path(__file__).parent
 SCHEMA = ROOT / "schema" / "findings.schema.json"
@@ -152,6 +153,7 @@ def render_prompt(
     workspace: Path,
     comments_text: str = "",
     target_language: str = "English",
+    repo_context_section: str = "",
 ) -> str:
     """Render the refinement prompt from item + repos + comments. Pure function.
 
@@ -174,6 +176,7 @@ def render_prompt(
         .replace("{repo_list}", ", ".join(repo_names))
         .replace("{target_language}", target_language)
         .replace("{schema}", SCHEMA.read_text())
+        .replace("{repo_context}", repo_context_section)
     )
 
 
@@ -202,15 +205,18 @@ def process_item(
     log: logging.Logger,
     *,
     repo_cache_root: Path | None = None,
+    knowledge: RepositoryKnowledge | None = None,
 ) -> None:
     """Per-item workflow — thin wrapper around RefinementService.refine.
 
     Kept for backwards compatibility with the existing test surface. New code
     should construct the services once and call `refine(item)` directly.
+
+    `knowledge` is the per-item RepositoryKnowledge facade; when omitted it
+    is auto-selected via `make_knowledge` once the workspace is prepared.
     """
     cache_root = repo_cache_root or Path(f"/tmp/refine-repos-{os.getpid()}")
     workspace_svc = WorkspaceService(cache_root=cache_root)
-    return
     context_svc = ContextService(
         client=client,
         schema_path=SCHEMA,
@@ -225,6 +231,7 @@ def process_item(
         workspace_service=workspace_svc,
         context_service=context_svc,
         publishing_service=publishing_svc,
+        knowledge=knowledge,
     )
     refinement_svc.refine(item)
 
@@ -264,6 +271,13 @@ def main() -> int:
 
         for item in queue:
             try:
+                # ponytail: knowledge facade is per-item (one workspace path
+                # per work item) and cheap — auto-pick best backend here.
+                # The workspace path is computed once and reused so the
+                # graphify index (synced during prepare) is the same dir Pi sees.
+                workspace_path = Path(f"/tmp/refine-{item['id']}")
+                knowledge = make_knowledge(project_path=workspace_path)
+                refinement_svc._knowledge = knowledge  # share the seam; tests can spy
                 refinement_svc.refine(item)
             except pi_runner.InfraError as e:
                 log.error("item %s infra failure: %s", item["id"], e)

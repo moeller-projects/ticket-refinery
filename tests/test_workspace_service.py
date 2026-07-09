@@ -130,3 +130,101 @@ def test_shutdown_cleans_cache(tmp_path):
 def test_shutdown_is_noop_when_no_cache_root():
     svc = WorkspaceService()
     svc.shutdown()  # must not raise even though no cache was configured
+
+
+# ---- graphify sync --------------------------------------------------------
+
+
+def test_prepare_invokes_graphify_install_per_repo(monkeypatch, tmp_path):
+    """Each cloned repo gets `graphify extract` run inside it so the AST
+    index is fresh before the orchestrator queries GraphifyBackend."""
+    _stub_clones(monkeypatch)
+    cache = tmp_path / "cache"
+    (cache / "alpha").mkdir(parents=True)
+    (cache / "alpha" / ".git").mkdir()
+    monkeypatch.setattr(git_ops, "clone_all", lambda repos, root, depth, pat: None)
+    runs: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        runs.append(cmd)
+        if cmd[:1] == ["graphify"] and "extract" in cmd:
+            cwd = kwargs.get("cwd")
+            (Path(cwd) / "graphify-out").mkdir(exist_ok=True)
+        from unittest.mock import MagicMock
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("services.workspace_service.subprocess.run", fake_run)
+    svc = WorkspaceService(cache_root=cache)
+    svc.prepare(item_id=42, repos=_repos(), depth=1, pat=None)
+    extracts = [c for c in runs if c[:2] == ["graphify", "extract"]]
+    assert extracts, "graphify extract should have been invoked at least once"
+    # Verify it passes the relevant flags: code-only (no LLM) + --out dir.
+    extract_args = extracts[0]
+    assert "--code-only" in extract_args
+    assert "--no-cluster" in extract_args
+
+
+def test_prepare_skips_graphify_when_cli_missing(monkeypatch, tmp_path):
+    """If the graphify CLI isn't installed, sync is a no-op (FilesystemBackend
+    still works downstream)."""
+    _stub_clones(monkeypatch)
+    cache = tmp_path / "cache"
+    (cache / "alpha").mkdir(parents=True)
+    (cache / "alpha" / ".git").mkdir()
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        from unittest.mock import MagicMock
+        if cmd[:2] == ["graphify", "extract"]:
+            raise FileNotFoundError("graphify not found")
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("services.workspace_service.subprocess.run", fake_run)
+    svc = WorkspaceService(cache_root=cache)
+    ws = svc.prepare(item_id=43, repos=_repos(), depth=1, pat=None)
+    assert ws.path == Path("/tmp/refine-43")
+    extract_calls = [c for c in calls if c[:2] == ["graphify", "extract"]]
+    assert extract_calls, f"expected graphify extract attempts, got {calls}"
+
+
+def test_prepare_swallows_graphify_install_errors(monkeypatch, tmp_path):
+    """A failing `graphify extract` is logged and skipped — the workspace
+    is still returned. The orchestrator will then run with a degraded
+    knowledge backend."""
+    _stub_clones(monkeypatch)
+    cache = tmp_path / "cache"
+    (cache / "alpha").mkdir(parents=True)
+    (cache / "alpha" / ".git").mkdir()
+
+    def fake_run(cmd, **kwargs):
+        from unittest.mock import MagicMock
+        if cmd[:2] == ["graphify", "extract"]:
+            raise subprocess.CalledProcessError(1, cmd)
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("services.workspace_service.subprocess.run", fake_run)
+    svc = WorkspaceService(cache_root=cache)
+    ws = svc.prepare(item_id=44, repos=_repos(), depth=1, pat=None)
+    assert ws.path == Path("/tmp/refine-44")
+
+
+def test_prepare_no_longer_uses_codegraph_cli(monkeypatch, tmp_path):
+    """Regression guard: the old `codegraph init` call must NOT appear
+    anywhere in the workspace preparation flow."""
+    _stub_clones(monkeypatch)
+    cache = tmp_path / "cache"
+    (cache / "alpha").mkdir(parents=True)
+    (cache / "alpha" / ".git").mkdir()
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        from unittest.mock import MagicMock
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("services.workspace_service.subprocess.run", fake_run)
+    svc = WorkspaceService(cache_root=cache)
+    svc.prepare(item_id=45, repos=_repos(), depth=1, pat=None)
+    assert not any(c and c[0] == "codegraph" for c in calls), \
+        f"stale codegraph CLI invocation: {calls}"

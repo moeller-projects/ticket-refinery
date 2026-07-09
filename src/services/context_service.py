@@ -1,8 +1,10 @@
-"""Context service: existing comments + work-item text → Pi prompt.
+"""Context service: existing comments + work-item text + curated repo context → Pi prompt.
 
 Responsibilities:
 - Fetch existing ADO comments.
 - Render the Pi prompt from the work item + comments + workspace.
+- Optionally splice a curated `RepositoryContext` into the prompt when the
+  orchestrator has already explored the repository (preferred path).
 - Stay close to the existing `render_prompt` behaviour (same template,
   same placeholders) so output is backwards-compatible.
 """
@@ -45,8 +47,20 @@ class ContextService:
             for c in comments
         )
 
-    def render_prompt(self, item: dict, repo_names: list[str], workspace: Path, comments_text: str) -> str:
-        """Render the refinement prompt for an item."""
+    def render_prompt(
+        self,
+        item: dict,
+        repo_names: list[str],
+        workspace: Path,
+        comments_text: str,
+        repo_context_section: str = "",
+    ) -> str:
+        """Render the refinement prompt for an item.
+
+        `repo_context_section` is pre-rendered markdown for the curated
+        repository context. Empty string ⇒ the prompt omits the context
+        section (legacy behaviour).
+        """
         schema_text = self._schema_path.read_text()
         tmpl = self._prompt_path.read_text()
         f = item["fields"]
@@ -64,10 +78,25 @@ class ContextService:
             .replace("{repo_list}", ", ".join(repo_names))
             .replace("{target_language}", self._target_language)
             .replace("{schema}", schema_text)
+            .replace("{repo_context}", repo_context_section)
         )
 
-    def build_inputs(self, item: dict, repo_names: list[str], workspace: Path) -> str:
+    def build_inputs(
+        self,
+        item: dict,
+        repo_names: list[str],
+        workspace: Path,
+        repo_context_section: str = "",
+    ) -> str:
         """Convenience: comments + prompt in one call. Equiv. of inlined
-        behaviour inside the old orchestrator loop."""
+        behaviour inside the old orchestrator loop.
+
+        `repo_context_section` is the pre-rendered curated repository
+        context. Pass an empty string to render the prompt without it
+        (legacy behaviour).
+        """
         comments_text = self.load_comments(item["id"])
-        return self.render_prompt(item, repo_names, workspace, comments_text)
+        return self.render_prompt(
+            item, repo_names, workspace, comments_text,
+            repo_context_section=repo_context_section,
+        )

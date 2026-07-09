@@ -1,4 +1,4 @@
-"""prompt template: CodeGraph-first instructions present, schema left intact."""
+"""prompt template: curated RepositoryContext placeholders present, schema left intact."""
 import json
 from pathlib import Path
 
@@ -9,28 +9,34 @@ PROMPT_PATH = SRC / "prompts" / "refine.prompt.tmpl.md"
 SCHEMA_PATH = SRC / "schema" / "findings.schema.json"
 
 
-def test_prompt_instructs_codegraph_first():
+def test_prompt_contains_curated_repo_context_placeholder():
+    """The prompt receives a pre-rendered RepositoryContext markdown block."""
     text = PROMPT_PATH.read_text()
-    assert "CodeGraph" in text
-    assert "codegraph" in text.lower()
-    assert "structural" in text.lower()
-    # CodeGraph must come BEFORE filesystem tools in priority.
-    cg_pos = text.lower().find("codegraph")
-    fs_pos = text.lower().find("filesystem")
-    assert cg_pos < fs_pos, "codegraph must be listed before filesystem tools"
+    assert "{repo_context}" in text
 
 
-def test_prompt_lists_specific_codegraph_tools():
+def test_prompt_no_longer_mentions_codegraph_tools():
+    """Repository intelligence is gathered before the prompt is built; Pi
+    must not be told to invoke any codegraph_* tools itself."""
     text = PROMPT_PATH.read_text().lower()
-    for tool in ("codegraph_search", "codegraph_callers", "codegraph_callees",
-                 "codegraph_impact", "codegraph_explore", "codegraph_node"):
-        assert tool in text, f"missing tool reference: {tool}"
+    for forbidden in (
+        "codegraph_search", "codegraph_callers", "codegraph_callees",
+        "codegraph_impact", "codegraph_explore", "codegraph_node",
+        "codegraph_*",
+    ):
+        assert forbidden not in text, f"stale codegraph tool reference: {forbidden}"
 
 
-def test_prompt_warns_against_repeated_filesystem_traversal():
+def test_prompt_explains_repo_context_handling():
     text = PROMPT_PATH.read_text().lower()
-    assert "never re-traverse" in text or "not re-traverse" in text
-    assert "fallback" in text
+    assert "curated" in text
+    assert "reason over" in text
+    # Either the explicit "no repository-wide scan" wording or the
+    # "do not re-discover the repository yourself with grep/find/ls"
+    # framing — both convey the same intent.
+    assert ("no repository-wide" in text
+            or "do not re-discover" in text)
+    assert "degraded" in text or "graph not ready" in text
 
 
 def test_prompt_has_schema_placeholder():
@@ -60,6 +66,23 @@ def test_rendered_prompt_carries_live_schema_text():
         assert "sourceRefs" in text
 
 
+def test_rendered_prompt_substitutes_repo_context(tmp_path, monkeypatch):
+    """When the renderer receives a repo_context_section, the {repo_context}
+    placeholder is replaced with that markdown."""
+    import refine
+    monkeypatch.setattr(refine, "SCHEMA", tmp_path / "s.json")
+    monkeypatch.setattr(refine, "PROMPT", tmp_path / "p.md")
+    (tmp_path / "s.json").write_text("")
+    (tmp_path / "p.md").write_text("CTX={repo_context}|X")
+    item = {"fields": {"System.Title": "T"}}
+    out = refine.render_prompt(item, [], Path("/w"), comments_text="",
+                               repo_context_section="CURATED-CONTENT")
+    assert "CTX=CURATED-CONTENT|X" in out
+    # Default (no context): placeholder becomes empty.
+    out2 = refine.render_prompt(item, [], Path("/w"), comments_text="")
+    assert "CTX=|X" in out2
+
+
 def test_prompt_includes_input_placeholders():
     text = PROMPT_PATH.read_text()
     for placeholder in (
@@ -71,6 +94,7 @@ def test_prompt_includes_input_placeholders():
         "{schema}",
         "{workspace}",
         "{target_language}",
+        "{repo_context}",
     ):
         assert placeholder in text, f"missing placeholder: {placeholder}"
 

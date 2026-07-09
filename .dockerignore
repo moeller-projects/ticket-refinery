@@ -1,6 +1,6 @@
 .git
 .github
-.codegraph
+.graphify
 docs
 tests
 *.ps1
