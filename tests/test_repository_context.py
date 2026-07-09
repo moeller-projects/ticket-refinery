@@ -146,18 +146,18 @@ def test_build_renders_clean_prompt_section(tmp_path):
     item = {"fields": {"System.Title": "OrderService rejects bad inputs"}}
     ctx = builder.build(item)
     section = ctx.to_prompt_section()
-    # All curated content + graphify skill instructions present.
     assert "Architecture summary" in section
     assert "summary text" in section
-    assert "Module dependency graph" in section
+    # The 200-module dependency dump is GONE — it bloated the prompt and
+    # Pi can request it via `/graphify path / query / affected` instead.
+    assert "Module dependency graph" not in section
     assert "/graphify query" in section
     assert "/graphify path" in section
     assert "/graphify explain" in section
     assert "/graphify affected" in section
     # No stale "degraded fallback" misleading tag.
     assert "(degraded fallback)" not in section
-    # The misleading "(no execution path found)" entry from the previous
-    # version must be gone — execution_path is the agent's job now.
+    # The old execution-path / impact-analysis noise is gone too.
     assert "no execution path found" not in section
     assert "Impact analysis" not in section
 
@@ -202,14 +202,13 @@ def test_build_swallows_backend_errors(tmp_path):
 def test_graph_path_is_reported_when_index_exists(tmp_path):
     """When graph.json exists on disk, the prompt mentions its location."""
     backend = _stub_backend()
-    # The stub's graph_path() points at graphify-out/graph.json — create it.
     (tmp_path / "graphify-out").mkdir()
     (tmp_path / "graphify-out" / "graph.json").write_text("{}")
     knowledge = RepositoryKnowledge(backend, project_path=tmp_path)
     builder = RepositoryContextBuilder(knowledge)
     ctx = builder.build({"fields": {"System.Title": "Foo"}})
     section = ctx.to_prompt_section()
-    assert "Graph index ready at" in section
+    assert "Graph index at" in section
     assert str(tmp_path) in section
 
 

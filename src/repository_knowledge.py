@@ -380,36 +380,68 @@ class GraphifyBackend(KnowledgeBackend):
             "callers": [c.__dict__ for c in callers],
         }
 
+    # ponytail: file suffixes that count as real source code. Project
+    # files (.sln, .csproj, .ps1, .sh, ...) and configs are noise — the
+    # curated prompt must not regurgitate them. Keep this list short and
+    # obvious; the curated primer only needs CODE for orientation.
+    _SOURCE_FILE_SUFFIXES = frozenset({
+        ".cs", ".java", ".kt", ".scala",
+        ".py", ".rb", ".go", ".rs",
+        ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+        ".c", ".cpp", ".cc", ".h", ".hpp", ".m", ".mm",
+        ".swift", ".php",
+        ".vue", ".svelte", ".astro",
+        ".dart", ".lua", ".pl", ".r",
+    })
+
     def architecture_summary(self, *, project_path: Path) -> ArchitectureSummary:
         graph = self._load_graph(project_path)
         if graph is None:
             return ArchitectureSummary(text="(no architecture summary available)", degraded=True)
-        # ponytail: source_file is absolute (rooted at the repo dir).
-        # Group by top-level dir relative to the repo root, not by full path.
-        try:
-            project_resolved = project_path.resolve()
-        except OSError:
-            project_resolved = project_path
-        files = {_node_file(data) for data in graph["nodes"].values() if _node_file(data)}
+        # ponytail: filter to actual source files. .sln, .csproj, .ps1 etc.
+        # are project-level artefacts, not code. The curated primer must
+        # not regurgitate them.
+        source_files: list[str] = []
+        for data in graph["nodes"].values():
+            f = _node_file(data)
+            if f and Path(f).suffix.lower() in self._SOURCE_FILE_SUFFIXES:
+                source_files.append(f)
+        if not source_files:
+            return ArchitectureSummary(text="(no source files in graph)", modules=(),
+                                        degraded=True)
+        # Group by the meaningful module segment. Source files in a
+        # multi-module repo typically live at
+        # `repo/<module>/<rest>/File.cs`; the meaningful group is `<module>`
+        # (= the second segment from the repo root or the workspace name).
         groups: dict[str, list[str]] = {}
-        for f in files:
-            fp = Path(f)
-            try:
-                rel = fp.relative_to(project_resolved)
-                parts = rel.parts
-            except ValueError:
-                parts = fp.parts
-            top = parts[0] if len(parts) > 1 else "."
-            # strip the leading repo-name segment for nicer grouping
-            if len(parts) >= 2:
-                top = parts[1] if parts[0].startswith("__r=") else parts[0]
+        for f in source_files:
+            parts = Path(f).parts
+            if len(parts) >= 3 and parts[0].startswith("__r="):
+                # Merged workspace node id (`__r=RepoName__/<rest>`).
+                # parts: ["__r=RepoName__", "<rest>[0]", "<rest>[1]", ...]
+                top = parts[2]
+            elif len(parts) >= 3:
+                # Repo-rooted absolute path:
+                # /tmp/refine-XX/RepoName/modules/<module>/<rest>/File.cs
+                # parts[-4] is the module if it sits at the canonical depth.
+                # Use the second-from-last directory for narrower grouping;
+                # fall back to the immediate parent.
+                top = parts[-2]
+            else:
+                top = parts[-2] if len(parts) >= 2 else "."
             groups.setdefault(top, []).append(f)
-        modules = sorted(groups)[:20]
-        lines = [f"{len(files)} source files grouped into {len(groups)} top-level modules."]
+        # Top 6 modules by file count; ignore single-file "modules" that
+        # are really edge cases.
+        modules = [m for m in sorted(groups, key=lambda m: -len(groups[m]))[:6]
+                   if len(groups[m]) >= 2]
+        lines = [f"{len(source_files)} source files across {len(groups)} modules."]
         for m in modules:
-            sample = sorted(groups[m])[:3]
+            sample = sorted(groups[m])[:2]
+            names = [Path(p).name for p in sample]
             lines.append(f"- `{m}/` ({len(groups[m])} files) — e.g. " +
-                         ", ".join(f"`{Path(p).name}`" for p in sample))
+                         ", ".join(f"`{n}`" for n in names))
+        if not modules:
+            lines.append("(no module has more than one source file)")
         return ArchitectureSummary(text="\n".join(lines), modules=tuple(modules), degraded=False)
 
     def dependency_graph(self, *, project_path: Path) -> DependencyGraph:

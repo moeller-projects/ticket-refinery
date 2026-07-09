@@ -24,7 +24,6 @@ from typing import Any
 
 from repository_knowledge import (
     ArchitectureSummary,
-    DependencyGraph,
     KnowledgeBackend,
     RelevantFiles,
     RepositoryKnowledge,
@@ -81,14 +80,19 @@ class RepositoryContext:
     """Curated kickstart for one work item."""
 
     architecture: ArchitectureSummary
-    dependencies: DependencyGraph
     relevant_files: RelevantFiles | None = None
     knowledge_backend: str = "unknown"
     graph_ready: bool = False
     graph_path: str | None = None
 
     def to_prompt_section(self) -> str:
-        """Render as a markdown block ready for the Pi prompt."""
+        """Render as a markdown block ready for the Pi prompt.
+
+        ponytail: this block should be small. The full dependency graph
+        and large file lists live on disk; the prompt points at them via
+        the Graphify skill cheatsheet. Rendering them inline bloats the
+        prompt without helping the answer.
+        """
         backend = self.knowledge_backend or "unknown"
         sections = ["## Repository context (curated)", ""]
         sections.append(
@@ -99,7 +103,7 @@ class RepositoryContext:
         sections.append("")
         status_bits: list[str] = [f"_Knowledge backend: `{backend}`._"]
         if self.graph_ready and self.graph_path:
-            status_bits.append(f"_Graph index ready at `{self.graph_path}`._")
+            status_bits.append(f"_Graph index at `{self.graph_path}`._")
         else:
             status_bits.append(
                 "_Graph index not built — run `graphify extract --code-only` "
@@ -122,18 +126,6 @@ class RepositoryContext:
         arch_text = self.architecture.text or "(no architecture summary available)"
         sections.append(arch_text)
         sections.append("")
-
-        if self.dependencies.nodes:
-            sections.append("### Module dependency graph")
-            sections.append("")
-            sections.append(f"{len(self.dependencies.nodes)} modules, "
-                            f"{len(self.dependencies.edges)} edges.")
-            sections.append("")
-            for e in self.dependencies.edges[:50]:
-                sections.append(f"- `{e.source}` → `{e.target}` ({e.kind})")
-            if len(self.dependencies.edges) > 50:
-                sections.append(f"- … {len(self.dependencies.edges) - 50} more edges")
-            sections.append("")
 
         if self.relevant_files is not None and self.relevant_files.files:
             sections.append("### Relevant files")
@@ -169,14 +161,12 @@ class RepositoryContextBuilder:
         project_path = self._knowledge.project_path
 
         architecture = self._safe_architecture()
-        dependencies = self._safe_dependencies()
         relevant = self._safe_relevant(entities)
 
         graph_ready, graph_path = self._graph_status(project_path)
 
         return RepositoryContext(
             architecture=architecture,
-            dependencies=dependencies,
             relevant_files=relevant,
             knowledge_backend=self._knowledge.backend_name,
             graph_ready=graph_ready,
@@ -241,13 +231,6 @@ class RepositoryContextBuilder:
             log.warning("architecture_summary failed: %s", e)
             return ArchitectureSummary(text="(architecture summary unavailable)",
                                         modules=(), degraded=True)
-
-    def _safe_dependencies(self) -> DependencyGraph:
-        try:
-            return self._knowledge.dependency_graph()
-        except Exception as e:  # noqa: BLE001
-            log.warning("dependency_graph failed: %s", e)
-            return DependencyGraph(degraded=True)
 
     def _safe_relevant(self, entities: list[str]) -> RelevantFiles | None:
         if not entities:

@@ -231,18 +231,33 @@ def test_graphify_impact_analysis_walks_inbound_edges(tmp_path):
 
 
 def test_graphify_architecture_summary_groups_by_top_dir(tmp_path):
+    """Modules group by the immediate parent directory of each source file.
+    .sln/.csproj/.ps1/etc. are filtered out — they belong to project config,
+    not code, and they bloated the curated prompt."""
     nodes = {
-        f"n{i}": {"label": f"f{i}", "kind": "function", "source_file": f"{top}/x.py", "start_line": i}
-        for i, top in enumerate(["src/orders", "src/payments", "src/orders", "src/shared"])
+        # Real source files — each module needs ≥2 files to surface.
+        "no1": {"label": "n1", "kind": "function", "source_file": "src/orders/x.py", "start_line": 1},
+        "no2": {"label": "n2", "kind": "function", "source_file": "src/orders/y.py", "start_line": 1},
+        "no3": {"label": "n3", "kind": "function", "source_file": "src/payments/a.py", "start_line": 1},
+        "no4": {"label": "n4", "kind": "function", "source_file": "src/payments/b.py", "start_line": 1},
+        "no5": {"label": "n5", "kind": "function", "source_file": "src/shared/c.py", "start_line": 1},
+        "no6": {"label": "n6", "kind": "function", "source_file": "src/shared/d.py", "start_line": 1},
+        # Project config — must be filtered.
+        "np1": {"label": "p1", "kind": "config", "source_file": "Laekkerai.Ordering.sln"},
+        "np2": {"label": "p2", "kind": "script", "source_file": "Install-Requirements.ps1"},
+        "np3": {"label": "p3", "kind": "config", "source_file": "modules/x/y.csproj"},
     }
     _write_graph(tmp_path, nodes=nodes, edges=[])
     gb = GraphifyBackend(cli="/bin/true")
     out = gb.architecture_summary(project_path=tmp_path)
     assert out.degraded is False
-    # Source paths are rooted under tmp_path now; top-level dir is still
-    # the second-to-last segment (src).
-    assert "src" in out.modules
-    assert "x.py" in out.text
+    assert "orders" in out.modules
+    assert "payments" in out.modules
+    assert "shared" in out.modules
+    # Filtered artefacts don't appear in the rendered text.
+    assert "Laekkerai.Ordering.sln" not in out.text
+    assert "Install-Requirements.ps1" not in out.text
+    assert "6 source files" in out.text
 
 
 def test_graphify_dependency_graph_collects_file_edges(tmp_path):
