@@ -4,142 +4,275 @@
 <meta charset="utf-8">
 <title>ticket-refinery — onboarding</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<style>body{font:16px/1.55 system-ui,sans-serif;max-width:980px;margin:2rem auto;padding:0 1rem}code,pre{font-family:ui-monospace,monospace}pre{background:#f4f4f4;padding:1rem;overflow:auto}.mermaid{margin:1rem 0}</style>
+<style>
+  body { font: 16px/1.55 system-ui, sans-serif; max-width: 980px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+  code, pre { font-family: ui-monospace, monospace; }
+  pre { background: #f4f4f4; padding: 1rem; overflow: auto; border-radius: 6px; }
+  code { background: #f0f0f0; padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.92em; }
+  h1, h2, h3 { line-height: 1.25; }
+  h2 { margin-top: 2.5rem; border-bottom: 1px solid #e5e5e5; padding-bottom: 0.3rem; }
+  h3 { margin-top: 1.5rem; }
+  ul, ol { padding-left: 1.4rem; }
+  li { margin: 0.25rem 0; }
+  .mermaid { margin: 1.25rem 0; background: #fafafa; padding: 1rem; border-radius: 8px; border: 1px solid #eee; }
+  .meta { background: #fff8e1; border-left: 4px solid #f5b400; padding: 0.6rem 1rem; border-radius: 0 6px 6px 0; margin: 1rem 0; }
+  .warn { background: #fdecea; border-left: 4px solid #c33; padding: 0.6rem 1rem; border-radius: 0 6px 6px 0; margin: 1rem 0; }
+  table { border-collapse: collapse; margin: 1rem 0; }
+  th, td { border: 1px solid #ddd; padding: 0.4rem 0.75rem; text-align: left; }
+  th { background: #f4f4f4; }
+  small.muted { color: #666; }
+</style>
 </head>
 <body>
-<h1>ticket-refinery — onboarding handoff</h1>
-<p>Audience: new teammate. Goal: run, debug, and change pipeline safely.</p>
-<h2>What this is</h2>
-<p>Containerized pipeline that reads ADO work items tagged <code>needs-refinement</code>, clones repos, asks Pi to produce structured findings, validates output, writes back description / acceptance criteria, comments, and moves tags.</p>
-<h2>System overview</h2>
-<div class="mermaid">flowchart LR
-  A[.env + auth.json] --> B[run.ps1]
-  B --> C[container]
-  C --> D[src/refine.py]
-  D --> RSvc[RefinementService]
-  RSvc --> WSvc[WorkspaceService]
-  RSvc --> CSvc[ContextService]
-  RSvc --> PSvc[PublishingService]
-  RSvc --> K[RepositoryKnowledge]
-  RSvc --> Ctx[RepositoryContextBuilder]
-  WSvc --> G[git clone + Graphify install]
-  CSvc --> A[ADO REST: comments]
-  PSvc --> A2[ADO REST: patch / comment / attachment / tag]
-  K --> GB[GraphifyBackend default]
-  K --> FS[FilesystemBackend fallback]
-  Ctx --> K
-  RSvc --> P[Pi CLI]
-  RSvc --> V[src/validate.py]
-  P -.reason over curated context.-> R[No exploration tools]
-  RSvc --> M[MetricsCollector counters+timers]
-  WSvc --> R2[retry.with_retry]
-  PSvc --> R2
-  A2 --> R2
-</div>
-<h2>Repo map</h2>
-<ul>
-<li><code>src/refine.py</code> thin orchestrator: env load, DI, queue loop, back-compat <code>process_item</code></li>
-<li><code>src/services/refinement_service.py</code> per-item phase composer (the only seam that touches metrics); splices curated RepositoryContext into the prompt</li>
-<li><code>src/services/workspace_service.py</code> clone, cache symlink, Graphify re-index, cleanup</li>
-<li><code>src/services/context_service.py</code> existing comments + prompt render (accepts an optional repo_context_section)</li>
-<li><code>src/services/publishing_service.py</code> ADO writes (description/AC/title in marker-block, comment, attachment upload, tag transitions)</li>
-<li><code>src/ado_client.py</code> ADO REST (WIQL, JSON Patch, comments, attachments)</li>
-<li><code>src/git_ops.py</code> parallel shallow clone with per-call PAT credential header</li>
-<li><code>src/pi_runner.py</code> Pi CLI subprocess wrapper + JSON parse (raises <code>InfraError</code> on non-JSON)</li>
-<li><code>src/validate.py</code> JSONSchema + every <code>sourceRef</code> resolves to a real file (no retry — permanent failure)</li>
-<li><code>src/retry.py</code> centralised 3-attempt backoff (1s/2s/4s); opt-in by exception class tuple</li>
-<li><code>src/metrics.py</code> counters + timer context manager + immutable <code>MetricsSnapshot</code></li>
-<li><code>src/repository_knowledge.py</code> <code>RepositoryKnowledge</code> facade over <code>GraphifyBackend</code> (default) or <code>FilesystemBackend</code> (fallback)</li>
-<li><code>src/repository_context.py</code> <code>RepositoryContext</code> DTO + <code>RepositoryContextBuilder</code>; called by the orchestrator before Pi runs</li>
-<li><code>src/prompts/refine.prompt.tmpl.md</code> Pi prompt (curated RepositoryContext spliced in by the orchestrator)</li>
-<li><code>src/schema/findings.schema.json</code> output contract (Draft-07)</li>
-<li><code>src/repos.jsonc</code> repo registry (<code>repo:&lt;name&gt;</code> → url + defaultBranch)</li>
-</ul>
-<p>Dependency direction (no cycles): <code>refine.py</code> → <code>RefinementService</code> → {Workspace, Context, Publishing}Service → {git_ops, pi_runner, ado_client, validate}. Services never import each other. <code>retry</code>, <code>metrics</code>, <code>repository_knowledge</code>, <code>repository_context</code> are independent cross-cutting layers.</p>
-<h2>Setup</h2>
-<ul>
-<li>Create <code>.env</code> from <code>.env.example</code></li>
-<li>Set <code>ADO_ORG</code>, <code>ADO_PROJECT</code>, auth, tags, <code>PI_MODEL</code></li>
-<li>Ensure <code>~/.pi/agent/auth.json</code> exists</li>
-<li>Use Docker or Podman</li>
-<li>Graphify ships in the container image (<code>pip install graphifyy</code>); the host doesn't need it</li>
-</ul>
-<h2>First run</h2>
-<pre><code>./check.ps1
-./run.ps1</code></pre>
-<h2>Pipeline flow</h2>
-<div class="mermaid">sequenceDiagram
-  participant H as Host
-  participant C as Container
-  participant A as ADO
-  participant G as Graphify
-  participant P as Pi
-  H->>C: run with .env + auth.json
-  C->>A: WIQL: tag CONTAINS trigger, NOT CONTAINS done/blocked
-  A-->>C: work item ids
-  loop per item
-    C->>C: WorkspaceService.prepare (clone + cache symlink + graphify install)
-    C->>G: graphify install (per repo, refresh AST index)
-    C->>A: get existing comments
-    C->>C: RepositoryContextBuilder.build (architecture, deps, execution paths, relevant files, impact)
-    C->>C: ContextService.build_inputs (render prompt with curated context)
-    C->>P: pi -p <prompt> --model <PI_MODEL>
-    P-->>C: JSON findings (reasoned over curated context)
-    C->>C: validate.check (schema + sourceRef existence; no retry)
-    alt has unknowns or validation fails
-      C->>A: comment + upload markdown + tag → refinement-blocked
-    else
-      C->>A: patch description (marker block) + patch AC + optional title + comment + upload markdown + tag → refinement-done
-    end
-    C->>C: WorkspaceService.cleanup (always)
-  end
-</div>
-<h2>ADO contracts</h2>
-<ul>
-<li>Input tag: <code>needs-refinement</code></li>
-<li>Success tag: <code>refinement-done</code></li>
-<li>Blocked tag: <code>refinement-blocked</code></li>
-<li>Permissions: Work Items Read &amp; Write + Code Read</li>
-<li>Repo mapping: <code>repo:&lt;name&gt;</code> tags must exist in <code>src/repos.jsonc</code></li>
-</ul>
-<h2>Pi integration</h2>
-<p>Pi runs as a CLI subprocess invoked by <code>src/pi_runner.py</code>:</p>
-<pre><code>pi -p &lt;prompt&gt; --model &lt;PI_MODEL&gt;</code></pre>
-<p>No <code>--tools</code> flag is set in code — Pi's read-only tool profile is configured by the running image / Pi extension, not by this repo. <code>stdout</code> must be JSON matching <code>src/schema/findings.schema.json</code>; non-JSON raises <code>InfraError</code> (no retry, the parser isn't going to suddenly succeed). Default timeout: <code>PI_TIMEOUT_SECONDS=900</code>.</p>
-<p>The application gathers curated repository intelligence (<em>before</em> Pi runs) and splices it into the prompt as a <code>{repo_context}</code> section. The Pi prompt template no longer instructs Pi to invoke any <code>graphify_*</code> tools; it tells Pi to reason over the provided curated content and only use <code>read</code> on the listed files when verifying specific lines. This reduces token spend and prevents Pi from re-running expensive repository-wide searches.</p>
-<h2>Config reference</h2>
-<p>All vars are read by <code>refine.Config.from_env()</code>; see <code>.env.example</code> for defaults + inline docs.</p>
-<ul>
-<li><strong>Azure DevOps:</strong> <code>ADO_ORG</code>, <code>ADO_PROJECT</code>, <code>ADO_PAT</code> (or <code>ADO_AUTH_TOKEN</code> / <code>ADO_MCP_AUTH_TOKEN</code> / <code>ADO_API_KEY</code> / <code>SYSTEM_ACCESSTOKEN</code> when PAT is empty — priority order is fixed in code).</li>
-<li><strong>Tags:</strong> <code>TAG_TRIGGER</code>, <code>TAG_DONE</code>, <code>TAG_BLOCKED</code> (must match actual ADO tags).</li>
-<li><strong>Behaviour:</strong> <code>ALLOW_TITLE_EDITS</code> (default <code>false</code>), <code>CLONE_DEPTH</code>, <code>TARGET_LANGUAGE</code> (default <code>English</code>).</li>
-<li><strong>Pi:</strong> <code>PI_MODEL</code>, <code>PI_TIMEOUT_SECONDS</code> (default <code>900</code>).</li>
-<li><strong>Container runtime:</strong> <code>CONTAINER_ENGINE</code> (docker/podman; auto-detected if blank).</li>
-</ul>
-<h2>Validation &amp; exit</h2>
-<ul>
-<li><code>0</code> queue drained OR all items reached <code>refinement-done</code> / <code>refinement-blocked</code></li>
-<li><code>1</code> infra failure: auth, clone, Pi invocation, unhandled exception</li>
-<li><code>2</code> launcher failure: missing <code>.env</code>, no container engine</li>
-</ul>
-<p>Reaching <code>refinement-blocked</code> (unknowns, validation failure) is a <em>successful</em> run. Only auth / clone / Pi failures fail the container.</p>
-<h2>Tests</h2>
-<p>From repo root: <code>python -m pytest -q</code> (use the project's <code>.venv</code>; deps live in <code>requirements.txt</code>, pinned by the <code>uv</code>-built image). Suite covers retry/metrics/repository_knowledge/repository_context units, service-layer orchestration with mocked collaborators, ADO REST with <code>requests</code> mocked, and a back-compat integration of <code>refine.process_item</code> with all externals stubbed. Each leaf module ships a tiny <code>__main__</code> self-check (run <code>python src/validate.py</code> etc.) so the lazy code is not blind.</p>
 
-<h2>Gotchas</h2>
+<h1>ticket-refinery — onboarding</h1>
+
+<p class="meta"><strong>Audience:</strong> new teammate. <strong>Goal:</strong> run, debug, and safely change the pipeline before your first PR.</p>
+
+<h2>1. What this is</h2>
+
+<p>Containerised Python pipeline that polls Azure DevOps for work items tagged <code>needs-refinement</code>, shallow-clones the repos named on the item into a per-item scratch workspace, asks the Pi coding agent to refine the item into structured findings, validates those findings, then writes them back to ADO (description patch, AC patch, summary comment, attachment, tag transition). One CLI command, runs in Docker, exit code is the success signal — not the stdout.</p>
+
+<p>Mental model: <strong>the orchestrator does everything boring</strong> (clone, build curated repository context, render prompt, call Pi, validate, publish, clean up). <strong>Pi only reasons</strong> over the provided context — it has no exploration tools and re-discovering the repo itself is forbidden by the prompt.</p>
+
+<h2>2. System map</h2>
+
+<div class="mermaid">flowchart TB
+  subgraph host[host]
+    ENV[.env + auth.json]
+  end
+  subgraph container[container]
+    REFINE[src/refine.py<br/>thin orchestrator]
+    RSVC[RefinementService]
+    WSVC[WorkspaceService]
+    CSVC[ContextService]
+    PSVC[PublishingService]
+    KNOW[RepositoryKnowledge facade]
+    CTX[RepositoryContextBuilder]
+    RPI[pi_runner]
+    VAL[validate]
+    RET[retry.with_retry]
+    MET[MetricsCollector]
+  end
+  subgraph ext[externals]
+    ADO[Azure DevOps REST]
+    GIT[GitHub / Azure DevOps Git]
+    GRAPH[Graphify CLI]
+    PI[Pi CLI]
+  end
+  ENV --> REFINE
+  REFINE --> RSVC
+  RSVC --> WSVC
+  RSVC --> CSVC
+  RSVC --> PSVC
+  RSVC --> KNOW
+  RSVC --> CTX
+  CTX --> KNOW
+  KNOW -. default .-> GBACK[GraphifyBackend]
+  KNOW -. fallback .-> FBACK[FilesystemBackend]
+  WSVC --> GIT
+  WSVC --> GRAPH
+  CSVC --> ADO
+  PSVC --> ADO
+  RSVC --> RPI --> PI
+  RSVC --> VAL
+  WSVC --> RET
+  PSVC --> RET
+  RPI --> RET
+  RSVC --> MET
+</div>
+
+<p><small class="muted">Dependency direction (no cycles): <code>refine.py</code> → <code>RefinementService</code> → {Workspace, Context, Publishing}Service → {git_ops, pi_runner, ado_client, validate}. Services never import each other. <code>retry</code>, <code>metrics</code>, <code>repository_knowledge</code>, <code>repository_context</code> are independent cross-cutting layers.</small></p>
+
+<h2>3. Pipeline flow (one work item)</h2>
+
+<div class="mermaid">sequenceDiagram
+  participant M as main
+  participant ADO as ADO
+  participant RS as RefinementService
+  participant WS as WorkspaceService
+  participant GR as Graphify
+  participant CT as ContextService
+  participant P as Pi
+  participant V as validate
+  participant PS as PublishingService
+
+  M->>ADO: WIQL query for trigger tag excluding done and blocked
+  ADO-->>M: work item ids batched by 200
+  loop per item
+    RS->>WS: prepare (clone, cache symlink, graphify extract)
+    WS->>GR: graphify extract (code-only, no-cluster)
+    Note over RS: build RepositoryContext from architecture and relevant files
+    RS->>CT: build_inputs (load comments, render prompt)
+    CT-->>RS: prompt with schema and repo-context substituted
+    RS->>P: invoke pi with prompt and PI_MODEL
+    P-->>RS: JSON findings
+    RS->>V: check schema and sourceRef file existence
+    alt unknowns present or validation failed
+      PS->>ADO: upload attachment, unknowns comment, tag to refinement-blocked
+    else
+      PS->>ADO: patch description, patch AC, optional title, summary comment, upload attachment, tag to refinement-done
+    end
+    RS->>WS: cleanup in finally
+  end
+  Note over M: exit 0 if queue drained or every item reached done or blocked
+  Note over M: exit 1 on InfraError or unhandled exception
+</div>
+
+<h2>4. Repo map</h2>
+
+<h3>Orchestration</h3>
 <ul>
-<li>Inline <code>#</code> comments in <code>.env</code> break parsing (<code>check.ps1</code> flags them).</li>
-<li>Podman rootless often fails DNS resolution — <code>run.ps1</code> forces <code>--dns 8.8.8.8</code> + <code>1.1.1.1</code> on podman.</li>
-<li>PAT scope: <strong>Work Items Read &amp; Write</strong> + <strong>Code Read</strong>. Missing scope → HTTP 401 with HTML body (dumped to <code>/tmp/ado-non-json-response.html</code>).</li>
-<li>PAT must never end up in a clone URL — <code>git_ops.py</code> uses a short-lived <code>http.extraHeader</code> per clone.</li>
-<li>Pi subscription OAuth tokens live at <code>~/.pi/agent/auth.json</code>; <code>run.ps1</code> mounts it read-write so token refresh works on long runs. Mounting <code>:ro</code> breaks renewal.</li>
-<li>Missing <code>repo:&lt;name&gt;</code> entry in <code>src/repos.jsonc</code> is a <strong>hard fail</strong> (raises <code>InfraError</code>), not a guess.</li>
-<li>Unresolved <code>sourceRef</code> paths never retry — schema/sourceRef failures are permanent; only transient HTTP/subprocess failures are retried.</li>
-<li><code>ALLOW_TITLE_EDITS=true</code> lets Pi rewrite the work-item title — off by default, risky.</li>
+  <li><code>src/refine.py</code> — thin orchestrator: env load, DI, queue loop, back-compat <code>process_item</code> wrapper.</li>
+  <li><code>src/services/refinement_service.py</code> — the per-item pipeline (the only seam that touches metrics). 7 phases; <strong>cleanup is unconditional in <code>finally</code></strong>.</li>
 </ul>
+
+<h3>Services</h3>
+<ul>
+  <li><code>src/services/workspace_service.py</code> — clone, cache symlink, Graphify re-index, cleanup. Broken-symlink handled (unlink + recreate).</li>
+  <li><code>src/services/context_service.py</code> — load existing comments + render the prompt (accepts an optional <code>repo_context_section</code>).</li>
+  <li><code>src/services/publishing_service.py</code> — all ADO writes (description/AC/title inside a marker block, comment, attachment upload, tag transitions). <strong>Has an open AC stub</strong> — see dragons.</li>
+</ul>
+
+<h3>Leaf modules</h3>
+<ul>
+  <li><code>src/ado_client.py</code> — ADO REST (WIQL, JSON Patch, comments, attachments). <strong>Dumps non-JSON responses to <code>/tmp/ado-non-json-response.html</code></strong> on proxy/auth failure.</li>
+  <li><code>src/git_ops.py</code> — parallel shallow clone. PAT delivered via short-lived <code>GIT_CONFIG_COUNT</code> + <code>http.extraHeader</code> per clone (never in URL).</li>
+  <li><code>src/pi_runner.py</code> — Pi subprocess wrapper with retry on transient errors. <strong>Raises <code>InfraError</code> on non-JSON or non-zero exit</strong> (no retry, parser won't suddenly succeed).</li>
+  <li><code>src/validate.py</code> — JSON Schema (Draft-07) + per-<code>sourceRef</code> file existence check. <strong>Never retried</strong> — schema/ref failures are permanent.</li>
+  <li><code>src/retry.py</code> — centralised 3-attempt backoff (1s/2s/4s). Opt-in by exception class tuple.</li>
+  <li><code>src/metrics.py</code> — counters + timer context manager + immutable <code>MetricsSnapshot</code>.</li>
+</ul>
+
+<h3>Repository intelligence</h3>
+<ul>
+  <li><code>src/repository_knowledge.py</code> — <code>RepositoryKnowledge</code> facade over <code>KnowledgeBackend</code>. Implementations: <code>GraphifyBackend</code> (default, reads parsed AST graph directly) / <code>FilesystemBackend</code> (grep fallback, all curated ops return <code>degraded=True</code>).</li>
+  <li><code>src/repository_context.py</code> — <code>RepositoryContext</code> DTO + <code>RepositoryContextBuilder</code>. Entity extraction is code-shaped (must have internal capital / underscore / digit) and explicitly filters EN + DE stopwords. <strong>Called by the orchestrator before Pi runs.</strong></li>
+  <li><code>src/prompts/refine.prompt.tmpl.md</code> — the prompt. <code>{repo_context}</code> is replaced by the orchestrator with the curated block; <code>{schema}</code> is the live JSON schema appended verbatim.</li>
+  <li><code>src/schema/findings.schema.json</code> — output contract.</li>
+  <li><code>src/repos.jsonc</code> — repo registry (<code>repo:&lt;name&gt;</code> → url + defaultBranch). <strong>Currently only one entry.</strong> Mounted <code>:ro</code> from host.</li>
+</ul>
+
+<h2>5. The 5 things to understand cold</h2>
+
+<ol>
+  <li><strong><code>src/refine.py:main()</code></strong> — thin. Loads <code>Config</code> from env, builds services once, calls <code>client.query_items(...)</code>, iterates items. <strong>Exit-code semantics are the whole game</strong>: <code>pi_runner.InfraError</code> → exit 1; <code>validate.ValidationError</code> → blocked tag + exit stays 0 (pipeline worked, content didn't); any other <code>Exception</code> is uncaught and exits 1 with a traceback.</li>
+  <li><strong><code>RefinementService.refine()</code></strong> — the 7-phase pipeline. <strong>Cleanup always runs in <code>finally</code></strong>; metrics live here (counters for success/blocked/infra-failure, timers per phase). The <code>_record_duration</code> helper is rough — see dragons.</li>
+  <li><strong><code>PublishingService</code></strong> — every ADO write. <code>_publish_done</code> patches Description + AC (+ optional Title) then comments + uploads attachment + transitions tag. <code>_publish_blocked</code> posts unknowns-list comment and tags blocked. Attachment upload runs first so a successful publish never half-completes.</li>
+  <li><strong><code>RepositoryKnowledge</code></strong> — the facade + two backends. <strong>Curated ops on the base class return <code>degraded=True</code> defaults</strong>; <code>GraphifyBackend</code> is what makes them real by reading <code>graph.json</code> directly (no per-query CLI). <code>_load_graph</code> handles both single-repo and workspace-of-cloned-repos layouts.</li>
+  <li><strong><code>RepositoryContextBuilder</code></strong> — the curated kickstart. <strong>Defensive: every backend call is wrapped in <code>_safe_*</code></strong> so a broken Graphify never breaks the prompt. Renders a small markdown block (architecture, /graphify cheatsheet, relevant files) — full dep graph stays on disk.</li>
+</ol>
+
+<h2>6. Setup &amp; first run</h2>
+
+<h3>Setup (one-time)</h3>
+<ol>
+  <li>Create <code>.env</code> from <code>.env.example</code> and fill in ADO settings + tags + <code>PI_MODEL</code>.</li>
+  <li>Ensure <code>~/.pi/agent/auth.json</code> exists (subscription OAuth tokens).</li>
+  <li>Add the repos you'll refine to <code>src/repos.jsonc</code> (<code>repo:&lt;name&gt;</code> → url + defaultBranch).</li>
+  <li>Docker or Podman on PATH (Podman rootless needs the DNS fix in <code>run.ps1</code>).</li>
+</ol>
+
+<p>Graphify and Pi ship inside the container image — the host doesn't need them.</p>
+
+<h3>First run</h3>
+<pre><code>./check.ps1          # preflight: .env present, no inline #, auth.json, image, container engine
+./run.ps1            # build local image, run, propagate exit code
+./run.ps1 -UseRemoteImage   # pull ghcr.io/moeller-projects/ticket-refinery:latest
+./run.ps1 -Build            # force rebuild local image
+</code></pre>
+
+<h2>7. Config reference</h2>
+
+<p>All variables are read by <code>refine.Config.from_env()</code>; see <code>.env.example</code> for inline docs.</p>
+
+<table>
+  <tr><th>Group</th><th>Variable</th><th>Notes</th></tr>
+  <tr><td rowspan="3">ADO</td><td><code>ADO_ORG</code>, <code>ADO_PROJECT</code></td><td>organisation + project</td></tr>
+  <tr><td><code>ADO_PAT</code></td><td>PAT, Work Items Read&amp;Write + Code Read only</td></tr>
+  <tr><td><code>ADO_AUTH_TOKEN</code> / <code>ADO_MCP_AUTH_TOKEN</code> / <code>ADO_API_KEY</code> / <code>SYSTEM_ACCESSTOKEN</code></td><td>Bearer-token alternates, used when <code>ADO_PAT</code> is empty</td></tr>
+  <tr><td>Tags</td><td><code>TAG_TRIGGER</code>, <code>TAG_DONE</code>, <code>TAG_BLOCKED</code></td><td>must match actual ADO tags</td></tr>
+  <tr><td rowspan="3">Behaviour</td><td><code>ALLOW_TITLE_EDITS</code></td><td>default <code>false</code> — Pi can rewrite titles when true</td></tr>
+  <tr><td><code>CLONE_DEPTH</code></td><td>git clone depth</td></tr>
+  <tr><td><code>TARGET_LANGUAGE</code></td><td>default <code>English</code></td></tr>
+  <tr><td rowspan="2">Pi</td><td><code>PI_MODEL</code></td><td>model Pi uses for refinement</td></tr>
+  <tr><td><code>PI_TIMEOUT_SECONDS</code></td><td>default <code>900</code></td></tr>
+  <tr><td>Container</td><td><code>CONTAINER_ENGINE</code></td><td>docker / podman; auto-detected if blank</td></tr>
+</table>
+
+<h2>8. Validation &amp; exit codes</h2>
+
+<table>
+  <tr><th>Exit</th><th>Meaning</th></tr>
+  <tr><td><code>0</code></td><td>queue drained or every item reached <code>refinement-done</code> / <code>refinement-blocked</code></td></tr>
+  <tr><td><code>1</code></td><td>infra failure: auth, clone, Pi invocation, unhandled exception</td></tr>
+  <tr><td><code>2</code></td><td>launcher failure: missing <code>.env</code>, no container engine</td></tr>
+</table>
+
+<p>Reaching <code>refinement-blocked</code> (unknowns, validation failure) is a <em>successful</em> run. Only auth / clone / Pi failures fail the container.</p>
+
+<h2>9. Tests</h2>
+
+<pre><code>python -m pytest -q                # use the project's .venv
+python src/validate.py             # leaf-module self-checks (one each)
+</code></pre>
+
+<p>Suite covers retry / metrics / repository_knowledge / repository_context units, service-layer orchestration with all collaborators mocked, ADO REST with <code>requests</code> stubbed, and a back-compat integration of <code>refine.process_item</code>. One pre-existing failure (<code>test_ado_client.py::test_query_items_uses_wiql_and_fetches_batch</code>, API_VERSION URL prefix mismatch) is unrelated to this code and was deliberately left untouched.</p>
+
+<h2>10. Conventions / fingerprints</h2>
+
+<ul>
+  <li><strong><code>ponytail:</code> comments</strong> mark deliberate simplifications and "this exists because X" notes. Read them before reading the function — they are faster and more honest than the code they annotate.</li>
+  <li><strong>Module-attribute imports</strong> at boundaries that tests monkeypatch: <code>import git_ops</code>, <code>import pi_runner</code>, <code>import validate</code> (never <code>from X import Y</code> at those seams).</li>
+  <li><strong><code>if __name__ == "__main__"</code> self-checks</strong> at the bottom of leaf modules: framework-free, fail-fast, one-shot.</li>
+  <li><strong><code>from __future__ import annotations</code></strong> + <strong><code>dataclass(frozen=True)</code></strong> everywhere. No mutable shared state.</li>
+  <li><strong>Retry is opt-in by exception class</strong>, not opt-out. Every retrying site passes its own tuple.</li>
+</ul>
+
+<h2>11. Gotchas &amp; dragons</h2>
+
+<div class="warn"><strong>These will bite you if you don't know they're here.</strong></div>
+
+<h3>Operator-level gotchas</h3>
+<ul>
+  <li>Inline <code>#</code> comments in <code>.env</code> break parsing — <code>check.ps1</code> flags them. (This was a real failure mode.)</li>
+  <li>Podman rootless often fails DNS resolution inside the container — <code>run.ps1</code> forces <code>--dns 8.8.8.8</code> + <code>1.1.1.1</code> on podman.</li>
+  <li>PAT scope must be <strong>Work Items Read &amp; Write</strong> + <strong>Code Read</strong>. Wrong scope → HTTP 401 with an HTML body, dumped to <code>/tmp/ado-non-json-response.html</code> for debug.</li>
+  <li>PAT must never end up in a clone URL — <code>git_ops.py</code> uses short-lived <code>GIT_CONFIG_*</code> auth headers per clone.</li>
+  <li>Pi subscription OAuth tokens at <code>~/.pi/agent/auth.json</code> are mounted <strong>read-write</strong> in <code>run.ps1</code> so token refresh works on long runs. Mounting <code>:ro</code> breaks renewal.</li>
+  <li>Missing <code>repo:&lt;name&gt;</code> in <code>src/repos.jsonc</code> is a <strong>hard fail</strong> (raises <code>InfraError</code>), not a guess or skip.</li>
+  <li>Unresolved <code>sourceRef</code> paths never retry — schema / ref failures are permanent; only transient HTTP / subprocess failures are retried.</li>
+  <li><code>ALLOW_TITLE_EDITS=true</code> lets Pi rewrite work-item titles — off by default, dangerous.</li>
+</ul>
+
+<h3>Code-level dragons</h3>
+<ul>
+  <li><strong><code>findings_to_ac_html</code> is a stub</strong> in <code>publishing_service.py</code> that writes a literal placeholder into the AC field. Until the AC shape is decided, every successful publish gets a placeholder AC.</li>
+  <li><strong><code>_record_duration</code> in <code>refinement_service.py</code></strong> defines an inner <code>_on</code> and immediately abandons it, returning <code>_record</code> which writes to the private <code>MetricsCollector._timings_ms</code> directly. Comment: "private but only this class writes it." Works today, will silently break the moment any second metrics-writing class lands.</li>
+  <li><strong>One uncaught-exception gap</strong>: <code>RefinementService.refine()</code> only knows how to handle <code>pi_runner.InfraError</code> and re-raises everything else. <code>main()</code> catches <code>InfraError</code> and <code>ValidationError</code> explicitly. Anything else (<code>RuntimeError</code>, <code>OSError</code>, etc.) bubbles up uncaught → exit 1 with traceback.</li>
+  <li><strong><code>publishing_service._safe</code></strong> catches <code>Exception</code> broadly inside per-write retry. If the comment fails after retries, the function logs and continues, but <code>add_tag(blocked)</code> still fires afterwards — work item ends up tagged blocked with no human explanation.</li>
+  <li><strong>Working tree is dirty</strong>: <code>src/services/refinement_service.py</code>, <code>LICENSE</code>, <code>.gitignore</code> all show CRLF-only diffs against HEAD. Looks like an editor or <code>.gitattributes</code> change. Confirm before any further work.</li>
+  <li><strong><code>repos.jsonc</code> has one entry</strong> (<code>Laekkerai.Ordering</code>). Every new repo requires an operator edit + container restart. File is mounted <code>:ro</code> from the host.</li>
+  <li><strong><code>_extract_entities</code> is harsh to non-code text</strong>. Tickets titled entirely in German/English prose produce an empty entity list → <code>relevant_files=None</code> in the prompt. Documented behavior, worth knowing.</li>
+</ul>
+
+<h2>12. Open questions (worth asking a teammate)</h2>
+
+<ul>
+  <li>The uncommitted CRLF diff — accidental editor swap, or about to commit a <code>.gitattributes</code> pinning LF?</li>
+  <li>Is the <code>findings_to_ac_html</code> stub intentional (waiting on AC shape spec) or forgotten?</li>
+  <li>Auto-retry on <code>refinement-blocked</code> is on the README's open-questions list. Decision yet, or still manual retag?</li>
+  <li>Why is <code>repos.jsonc</code> mounted <code>:ro</code> rather than baked into the image?</li>
+  <li>The Bearer-token priority chain (<code>SYSTEM_ACCESSTOKEN</code> → <code>ADO_AUTH_TOKEN</code> → <code>ADO_MCP_AUTH_TOKEN</code> → <code>ADO_API_KEY</code>) is documented in <code>.env.example</code> but <code>AdoClient.__init__</code> only takes one PAT. Is there an alternate auth path coming, or dead documentation?</li>
+  <li>The pre-existing <code>test_ado_client.py</code> failure — anyone planning to fix it, or frozen as "known broken, unrelated"?</li>
+  <li>Single ADO project assumed — does the org use multiple ADO projects with overlapping repos?</li>
+  <li>What does the production Pi subscription model actually do end-to-end (subscription auth, model fallback, tool profile)? The repo can't answer this; needs a real run.</li>
+</ul>
+
 <script type="module">
-import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-mermaid.initialize({startOnLoad:true,securityLevel:'loose'});
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' });
 </script>
+
 </body>
 </html>
