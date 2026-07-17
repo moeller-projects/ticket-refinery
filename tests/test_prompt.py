@@ -38,6 +38,18 @@ def test_prompt_explains_repo_context_handling():
             or "do not re-discover" in text)
     assert "degraded" in text or "graph not ready" in text
 
+def test_prompt_requires_blocking_unknowns_and_minimal_technical_evidence():
+    text = PROMPT_PATH.read_text().lower()
+    assert "only when the uncertainty blocks implementation" in text
+    assert "do not dump or reproduce complete files" in text
+    assert "objects/classes" in text
+    assert "api endpoints" in text
+    assert "short exact code snippet" in text
+    assert "concise pseudocode" in text
+    assert "without inventing repository citations" in text
+    assert "never infer them from naming conventions" in text
+    assert "maximum 20 `facts`" in text
+
 
 def test_prompt_has_schema_placeholder():
     """{schema} placeholder is present; the actual schema is injected at

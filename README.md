@@ -1,8 +1,8 @@
 # ticket-refinery
 
 Containerized, deterministic pipeline that refines Azure DevOps work items
-tagged `needs-refinement` using the Pi coding agent (read-only), then writes
-findings back to the work item (description, AC, comment, tag transition).
+tagged `needs-refinement` using the Pi coding agent (read-only), then posts
+findings as a work-item comment and transitions its tag.
 
 ## How it works
 
@@ -17,10 +17,9 @@ findings back to the work item (description, AC, comment, tag transition).
    spending tool calls re-discovering the repository.
 5. Run Pi (read-only permission profile) against the curated prompt.
 6. Validate findings JSON (schema + every `sourceRef` resolves to a real file).
-7. Patch description / AC inside a bounded HTML-comment block; comment once;
-   upload an attachment with the markdown result; transition
-   `needs-refinement` → `refinement-done` (or `refinement-blocked` on
-   unknowns / validation failure).
+7. Post the findings summary as a work-item comment; upload an attachment
+   with the markdown result; transition `needs-refinement` →
+   `refinement-done` (or `refinement-blocked` on unknowns / validation failure).
 8. Exit 0 when the queue is empty.
 
 `process_item` is wrapped in a `try / finally` so the workspace is cleaned up

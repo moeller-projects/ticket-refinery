@@ -54,18 +54,31 @@ def test_publish_blocked_writes_comment_and_adds_blocked_tag(client):
     client.remove_tag.assert_not_called()
 
 
-def test_publish_done_patches_description_ac_and_transitions_tags(client):
+def test_publish_done_posts_comment_and_transitions_tags(client):
     svc = PublishingService(client=client)
     item = {"id": 42, "fields": {"System.Tags": "needs-refinement; repo:alpha; extra"}}
     svc.publish(item, _findings_done(), allow_title_edits=False,
                 tag_trigger="needs-refinement", tag_done="refinement-done",
                 tag_blocked="refinement-blocked",
                 result_markdown=None, attachment_name=None)
-    client.patch_description.assert_called_once()
-    client.patch_acceptance_criteria.assert_called_once()
+    client.patch_description.assert_not_called()
+    client.patch_acceptance_criteria.assert_not_called()
+    client.comment.assert_called_once()
     client.patch_title.assert_not_called()  # title edits disabled
     client.remove_tag.assert_called_once_with(item, "needs-refinement")
     client.add_tag.assert_called_once_with(item, "refinement-done")
+
+def test_publish_does_not_transition_when_comment_fails(client):
+    client.comment.side_effect = RuntimeError("comment unavailable")
+    svc = PublishingService(client=client)
+    item = {"id": 42, "fields": {"System.Tags": "needs-refinement; repo:alpha"}}
+    with pytest.raises(RuntimeError, match="comment unavailable"):
+        svc.publish(item, _findings_done(), allow_title_edits=False,
+                    tag_trigger="needs-refinement", tag_done="refinement-done",
+                    tag_blocked="refinement-blocked",
+                    result_markdown=None, attachment_name=None)
+    client.add_tag.assert_not_called()
+    client.remove_tag.assert_not_called()
 
 
 def test_publish_done_patches_title_when_allowed_and_provided(client):

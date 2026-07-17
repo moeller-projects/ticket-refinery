@@ -1,14 +1,13 @@
 """Publishing: write Pi findings back to ADO.
 
 Owns:
-- Description / Acceptance Criteria / Title patches.
 - The comment (summary, or unknowns-list when blocked).
+- Optional Title patch.
 - Attachment upload + relation.
 - Trigger → done / blocked tag transitions.
 
-Wraps each ADO write with the central retry helper. Validation failures
-from `validate.check` are still surfaced by the caller; we don't try to
-make them transient.
+Description and Acceptance Criteria are intentionally never modified. The
+refinement result is posted as a work-item comment instead.
 """
 from __future__ import annotations
 
@@ -117,26 +116,15 @@ class PublishingService:
         tag_done: str,
     ) -> None:
         facts = findings.get("facts", [])
-        dtos = findings.get("dtos", [])
+        objects = findings.get("dtos", [])
         api_specs = findings.get("api_specs", [])
-        desc_html = findings_to_html(findings)
-        ac_html = findings_to_ac_html(findings)
         summary = format_summary(findings)
         log.info(
-            "item %s outcome=done facts=%d dtos=%d api_specs=%d desc_len=%d ac_len=%d summary_len=%d",
-            item["id"], len(facts), len(dtos), len(api_specs),
-            len(desc_html), len(ac_html), len(summary),
+            "item %s outcome=done facts=%d objects=%d api_specs=%d summary_len=%d",
+            item["id"], len(facts), len(objects), len(api_specs), len(summary),
         )
-        log.info("item %s azure_patch field=System.Description len=%d", item["id"], len(desc_html))
-        self._safe(
-            lambda: self._client.patch_description(item, desc_html),
-            "patch_description", item["id"],
-        )
-        log.info("item %s azure_patch field=Microsoft.VSTS.Common.AcceptanceCriteria len=%d", item["id"], len(ac_html))
-        self._safe(
-            lambda: self._client.patch_acceptance_criteria(item, ac_html),
-            "patch_acceptance_criteria", item["id"],
-        )
+        # Refinement results belong in the work-item discussion, not in the
+        # Description or Acceptance Criteria fields.
         if allow_title_edits and findings.get("suggested_title"):
             log.info("item %s azure_patch field=System.Title value=%r",
                      item["id"], findings["suggested_title"])
@@ -161,7 +149,12 @@ class PublishingService:
     def _comment(self, item_id: int, body: str, *, blocked: bool) -> None:
         action = "blocked" if blocked else "summary"
         log.info("item %s azure_comment action=post %s", item_id, action)
-        self._safe(lambda: self._client.comment(item_id, body), "comment", item_id)
+        # A publish without its comment is incomplete. Propagate failure so
+        # the item is not tagged done/blocked while the explanation is missing.
+        with_retry(
+            lambda: self._client.comment(item_id, body),
+            retryable=_RETRYABLE_REST,
+        )
 
     def _safe(self, fn: callable, label: str, item_id: int) -> None:
         """Run an ADO write with retry. Auth/validation errors propagate."""

@@ -293,8 +293,8 @@ def test_process_item_happy_path_writes_back_and_transitions(monkeypatch):
 
     refine.process_item(item, cfg, client, repos_map, logging.getLogger("t"))
 
-    client.patch_description.assert_called_once()
-    client.patch_acceptance_criteria.assert_called_once()
+    client.patch_description.assert_not_called()
+    client.patch_acceptance_criteria.assert_not_called()
     client.comment.assert_called_once()  # summary, no unknowns
     client.add_tag.assert_called_with(item, cfg.tag_done)
     client.remove_tag.assert_called_with(item, cfg.tag_trigger)
