@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Localized kickstart handoff for ticket-refinery operators and developers.">
+<title>ticket-refinery — Kickstart Handoff</title>
+<style>
+:root { color-scheme: light; --ink:#17202a; --muted:#52606d; --line:#d9e2ec; --brand:#155eef; --soft:#f5f8fc; --warn:#fff4e5; --danger:#fff0f0; --ok:#ecfdf3; }
+* { box-sizing:border-box; }
+body { margin:0; background:#f7f9fc; color:var(--ink); font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif; }
+main { max-width:1120px; margin:0 auto; padding:2rem 1.25rem 4rem; }
+h1,h2,h3 { line-height:1.2; }
+h1 { font-size:clamp(2rem,4vw,3.5rem); margin:.4rem 0; }
+h2 { margin-top:2.5rem; border-bottom:1px solid var(--line); padding-bottom:.45rem; }
+h3 { margin-top:1.6rem; }
+p { max-width:85ch; }
+a { color:var(--brand); }
+.hero { background:linear-gradient(135deg,#e8f0ff,#fff); border:1px solid #bfd1f8; border-radius:18px; padding:1.5rem 1.75rem; }
+.meta,.callout { border-left:5px solid var(--brand); background:#eef4ff; padding:.8rem 1rem; border-radius:0 10px 10px 0; margin:1rem 0; }
+.warn { border-left-color:#d97706; background:var(--warn); }
+.danger { border-left-color:#dc2626; background:var(--danger); }
+.ok { border-left-color:#059669; background:var(--ok); }
+.controls { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin:1rem 0; }
+button { border:1px solid #9fb8e9; border-radius:999px; background:white; color:var(--ink); padding:.45rem .85rem; cursor:pointer; font-weight:600; }
+button[aria-pressed=true] { background:var(--brand); color:white; border-color:var(--brand); }
+.lang { display:none; }
+.lang.active { display:block; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:1rem; }
+.card { background:white; border:1px solid var(--line); border-radius:12px; padding:1rem; box-shadow:0 2px 8px #17202a0a; }
+.card h3 { margin-top:0; }
+code,pre { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+code { background:#edf2f7; color:#17202a; border-radius:4px; padding:.08rem .3rem; font-size:.92em; }
+pre { background:#101828; color:#e6edf3; padding:1rem; overflow:auto; border-radius:10px; font-size:.88rem; line-height:1.45; }
+pre code { background:transparent; color:inherit; border-radius:0; padding:0; font-size:inherit; }
+.mermaid { background:white; border:1px solid var(--line); border-radius:12px; padding:1rem; margin:1rem 0; overflow:auto; }
+table { border-collapse:collapse; width:100%; margin:1rem 0; background:white; }
+th,td { border:1px solid var(--line); padding:.55rem .7rem; text-align:left; vertical-align:top; }
+th { background:var(--soft); }
+li { margin:.28rem 0; }
+small,.muted { color:var(--muted); }
+details { background:white; border:1px solid var(--line); border-radius:10px; padding:.7rem 1rem; margin:1rem 0; }
+summary { cursor:pointer; font-weight:700; }
+footer { border-top:1px solid var(--line); margin-top:3rem; padding-top:1rem; color:var(--muted); }
+@media print { .controls { display:none; } .lang { display:block !important; } .hero { break-inside:avoid; } }
+</style>
+</head>
+<body>
+<main>
+<header class="hero">
+  <div class="controls" aria-label="Language selector">
+    <span class="muted">Sprache / Language:</span>
+    <button id="deBtn" aria-pressed="true" onclick="setLanguage('de')">Deutsch</button>
+    <button id="enBtn" aria-pressed="false" onclick="setLanguage('en')">English</button>
+  </div>
+  <div id="deTitle" class="lang active">
+    <p class="muted">User-facing Kickstart Handoff · Stand 2026-07-24 10:40 UTC</p>
+    <h1>ticket-refinery schnell sicher starten</h1>
+    <p>Ein kompakter Handoff für Operatoren und Entwickler: von der ersten Konfiguration bis zum ersten validierten ADO-Work-Item.</p>
+  </div>
+  <div id="enTitle" class="lang">
+    <p class="muted">User-facing kickstart handoff · As of 2026-07-24 10:40 UTC</p>
+    <h1>Start ticket-refinery safely</h1>
+    <p>A compact handoff for operators and developers: from first configuration to the first validated ADO work item.</p>
+  </div>
+</header>
+
+<section id="de" class="lang active" lang="de">
+  <div class="callout ok"><strong>Ziel:</strong> Eine Queue mit <code>needs-refinement</code>-Items wird verarbeitet. Erfolgreiche Findings werden validiert, kommentiert, angehängt und mit <code>refinement-done</code> markiert. Nicht auflösbare Findings werden mit <code>refinement-blocked</code> markiert.</div>
+
+  <h2>1. In fünf Minuten loslegen</h2>
+  <ol>
+    <li><code>.env.example</code> nach <code>.env</code> kopieren und ADO-/Pi-Werte setzen.</li>
+    <li>Mindestens ein <code>repo:&lt;name&gt;</code>-Mapping in <code>src/repos.jsonc</code> eintragen.</li>
+    <li>Pi-Auth unter <code>~/.pi/agent/auth.json</code> bereitstellen, falls Subscription-OAuth verwendet wird.</li>
+    <li><code>./check.ps1</code> ausführen.</li>
+    <li><code>./run.ps1</code> starten; der Exitcode ist das Betriebssignal.</li>
+  </ol>
+  <pre><code>Copy-Item .env.example .env
+# .env bearbeiten: ADO_ORG, ADO_PROJECT, ADO_PAT, Tags, CLONE_DEPTH, PI_MODEL
+./check.ps1
+./run.ps1</code></pre>
+  <div class="callout warn"><strong>Wichtig:</strong> <code>run.ps1</code> akzeptiert keinen fehlenden <code>.env</code>. Es gibt keinen Fallback auf Platzhalterwerte aus <code>.env.example</code>. Siehe <code>run.ps1:11-23</code>.</div>
+
+  <h2>2. Was beim Lauf passiert</h2>
+  <div class="mermaid">flowchart TD
+    A[ADO Queue abfragen] --> B{repo:name Tags aufloesbar?}
+    B -- nein --> X[InfraError / Exit 1]
+    B -- ja --> C[Shallow clone in /tmp/refine-id]
+    C --> D[Graphify Index aktualisieren]
+    D --> E[Kommentare + Work Item + Repo-Kontext in Prompt]
+    E --> F[Pi read-only ausfuehren]
+    F --> G{JSON und SourceRefs valide?}
+    G -- nein --> H[Blocked-Kommentar + refinement-blocked]
+    G -- ja --> I{unknowns vorhanden?}
+    I -- ja --> H
+    I -- nein --> J[Attachment + Summary + refinement-done]
+    H --> K[Workspace cleanup]
+    J --> K
+  </div>
+  <p class="muted">Der Graph wird vor Pi erzeugt. Pi soll über den vorbereiteten Kontext argumentieren, nicht das Repository unkontrolliert neu entdecken.</p>
+
+  <h2>3. Betriebsablauf pro Work Item</h2>
+  <div class="mermaid">sequenceDiagram
+    participant M as main
+    participant A as Azure DevOps
+    participant W as WorkspaceService
+    participant C as ContextService
+    participant P as Pi
+    participant V as validate
+    participant U as PublishingService
+    M->>A: query_items(trigger, exclusions)
+    A-->>M: Queue
+    M->>W: prepare(repos, depth, PAT)
+    W-->>M: Workspace + Graphify index
+    M->>C: build_inputs(item, repos, context)
+    C->>A: get_comments(top=20)
+    A-->>C: Existing comments
+    C-->>M: Prompt with schema
+    M->>P: run(prompt, model)
+    P-->>M: Findings JSON
+    M->>V: check(schema, sourceRefs)
+    alt invalid or blocked
+      M->>U: publish blocked outcome
+      U->>A: comment + blocked tag
+    else valid and actionable
+      M->>U: publish done outcome
+      U->>A: attachment + comment + done tag
+    end
+    M->>W: cleanup in finally
+  </div>
+
+  <h2>4. Konfiguration, die wirklich zählt</h2>
+  <table>
+    <thead><tr><th>Variable</th><th>Verwendung</th><th>Hinweis</th></tr></thead>
+    <tbody>
+      <tr><td><code>ADO_ORG</code>, <code>ADO_PROJECT</code></td><td>ADO REST-Basis-URL</td><td>Organisation und Projekt müssen zusammenpassen.</td></tr>
+      <tr><td><code>ADO_PAT</code></td><td>Work-Item- und Code-Zugriff</td><td>Nur Work Items Read &amp; Write und Code Read vergeben.</td></tr>
+      <tr><td><code>TAG_TRIGGER</code></td><td>Queue-Filter</td><td>Typisch: <code>needs-refinement</code>.</td></tr>
+      <tr><td><code>TAG_DONE</code>, <code>TAG_BLOCKED</code></td><td>Ergebnisstatus</td><td>Typisch: <code>refinement-done</code> / <code>refinement-blocked</code>.</td></tr>
+      <tr><td><code>CLONE_DEPTH</code></td><td>Git shallow clone</td><td>Für schnellen Start meist <code>1</code>.</td></tr>
+      <tr><td><code>PI_MODEL</code></td><td>Pi CLI Modellwahl</td><td>Muss im Container verfügbar sein.</td></tr>
+      <tr><td><code>ALLOW_TITLE_EDITS</code></td><td>Optionale Titeländerungen</td><td>Standard <code>false</code>; nur bewusst aktivieren.</td></tr>
+      <tr><td><code>TARGET_LANGUAGE</code></td><td>Fallback-Sprache der Findings</td><td>Work-Item-Sprache hat Vorrang im Prompt.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>5. Exakte Codepfade für Debugging</h2>
+  <details open>
+    <summary>Queue und Exitcodes — <code>src/refine.py:239-294</code></summary>
+    <p><code>main()</code> baut Services einmal, liest die Queue und behandelt Infrastruktur-/Validierungsfehler unterschiedlich.</p>
+    <pre><code>queue = client.query_items(cfg.tag_trigger, [cfg.tag_done, cfg.tag_blocked])
+for item in queue:
+    try:
+        refinement_svc.refine(item)
+    except pi_runner.InfraError as e:
+        exit_code = 1
+    except validate.ValidationError as e:
+        client.comment(item["id"], f"Refinement failed validation: {e}")
+        client.add_tag(item, cfg.tag_blocked)
+finally:
+    workspace_svc.shutdown()</code></pre>
+    <p class="muted">Die genauen Kontrollstellen liegen in <code>src/refine.py:268-292</code>; der Snippet ist auf den beobachteten Kernpfad gekürzt.</p>
+  </details>
+  <details>
+    <summary>Per-Item-Reihenfolge — <code>src/services/refinement_service.py:75-142</code></summary>
+    <pre><code>workspace = self._workspace.prepare(...)
+try:
+    prompt = self._context.build_inputs(...)
+    findings = pi_runner.run(prompt, self._cfg.pi_model)
+    validate_module.check(findings, workspace.path, schema, known_repos=...)
+    self._publishing.publish(item, findings, ...)
+finally:
+    self._workspace.cleanup(workspace.path)</code></pre>
+    <p class="muted">Cleanup bleibt auch bei Pi-, Validierungs- oder Publishing-Fehlern aktiv: <code>src/services/refinement_service.py:134-142</code>.</p>
+  </details>
+  <details>
+    <summary>Security-relevanter Clone-Pfad — <code>src/git_ops.py:29-48</code></summary>
+    <pre><code>if pat:
+    header = base64.b64encode(f":{pat}".encode()).decode()
+    env["GIT_CONFIG_KEY_0"] = "http.extraHeader"
+    env["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {header}"
+subprocess.run(cmd, check=True, env=env)</code></pre>
+    <p class="muted">Das PAT wird nicht in die Clone-URL geschrieben. Trotzdem dürfen Logs, Debug-Ausgaben und gemountete Dateien keine Credentials enthalten.</p>
+  </details>
+
+  <h2>6. Fehlerbilder und erste Aktion</h2>
+  <table>
+    <thead><tr><th>Symptom</th><th>Wahrscheinliche Stelle</th><th>Erste Aktion</th></tr></thead>
+    <tbody>
+      <tr><td>Exit 2</td><td>Launcher</td><td><code>.env</code> und Docker/Podman auf PATH prüfen.</td></tr>
+      <tr><td>ADO liefert HTML statt JSON</td><td>Auth, Proxy, Org/Projekt</td><td><code>/tmp/ado-non-json-response.html</code> ansehen; PAT-Scope prüfen.</td></tr>
+      <tr><td>Unbekannter <code>repo:</code>-Tag</td><td><code>src/repos.jsonc</code></td><td>Mapping ergänzen und Container neu starten.</td></tr>
+      <tr><td>Pi non-zero oder non-JSON</td><td><code>src/pi_runner.py</code></td><td>Pi-Auth, Modellname und Prompt-Ausgabe prüfen; Exit 1 ist korrekt.</td></tr>
+      <tr><td>SourceRef unresolved</td><td><code>src/validate.py</code></td><td>Repo-Tag, Pfad und Clone-Inhalt prüfen; kein Retry.</td></tr>
+      <tr><td>Graphify fehlt/fehlschlägt</td><td><code>WorkspaceService</code></td><td>Filesystem-Fallback prüfen; Analysequalität ist dann reduziert.</td></tr>
+    </tbody>
+  </table>
+  <div class="callout danger"><strong>Bekannter Betriebsrisikopunkt:</strong> ADO-Schreibfehler bei einzelnen Tag- oder Titeloperationen werden in <code>PublishingService._safe</code> geloggt und teilweise nicht propagiert. Nach einem Incident immer den tatsächlichen ADO-Zielzustand prüfen, nicht nur Exit 0.</div>
+
+  <h2>7. Minimaler Entwickler-Check</h2>
+  <ol>
+    <li>Änderung lokal mit den kleinsten betroffenen Tests prüfen.</li>
+    <li>Für Retry-, Pfad-, ADO- und Publishing-Änderungen mindestens einen Negativpfad ausführen.</li>
+    <li>Mit einem Container-Smoke-Test verifizieren: Queue lesen, Workspace bereiten, Pi aufrufen, Findings validieren, Workspace löschen.</li>
+    <li>Keine neuen Abstraktionen einführen, solange vorhandene Services oder <code>KnowledgeBackend</code> reichen.</li>
+  </ol>
+  <pre><code>
+uv run --with pytest --with requests --with jsonschema pytest -q
+uv run python src/validate.py
+# anschließend, sofern Docker/ADO-Testumgebung verfügbar:
+./check.ps1
+./run.ps1
+</code></pre>
+  <p class="muted">In der Analyseumgebung war pytest nicht über den System-Interpreter verfügbar; eine Prozent-Coverage ist daher kein verifizierter Handoff-Fakt.</p>
+
+  <h2>8. Übergabe-Checkliste</h2>
+  <ul>
+    <li><input type="checkbox"> `.env` nicht committen und PAT-Scope minimieren.</li>
+    <li><input type="checkbox"> `src/repos.jsonc` enthält für jedes Work-Item-Repo URL und Branch.</li>
+    <li><input type="checkbox"> <code>./check.ps1</code> ist ohne Fehler durchgelaufen.</li>
+    <li><input type="checkbox"> Ein Test-Item wurde entweder <code>refinement-done</code> oder begründet <code>refinement-blocked</code>.</li>
+    <li><input type="checkbox"> Attachment, Kommentar und Tags in ADO manuell geprüft.</li>
+    <li><input type="checkbox"> Bei Codeänderungen exakte SourceRefs/Zeilenbereiche aktualisiert.</li>
+  </ul>
+</section>
+
+<section id="en" class="lang" lang="en">
+  <div class="callout ok"><strong>Goal:</strong> Process a queue of <code>needs-refinement</code> work items. Valid findings are checked, commented, attached, and tagged <code>refinement-done</code>. Unresolvable findings are tagged <code>refinement-blocked</code>.</div>
+
+  <h2>1. Start in five minutes</h2>
+  <ol>
+    <li>Copy <code>.env.example</code> to <code>.env</code> and set ADO/Pi values.</li>
+    <li>Add at least one <code>repo:&lt;name&gt;</code> mapping to <code>src/repos.jsonc</code>.</li>
+    <li>Provide <code>~/.pi/agent/auth.json</code> when using subscription OAuth.</li>
+    <li>Run <code>./check.ps1</code>.</li>
+    <li>Run <code>./run.ps1</code>; the exit code is the operational signal.</li>
+  </ol>
+  <pre><code>Copy-Item .env.example .env
+# edit .env: ADO_ORG, ADO_PROJECT, ADO_PAT, tags, CLONE_DEPTH, PI_MODEL
+./check.ps1
+./run.ps1</code></pre>
+  <div class="callout warn"><strong>Important:</strong> <code>run.ps1</code> fails when <code>.env</code> is missing. It does not fall back to placeholder values. See <code>run.ps1:11-23</code>.</div>
+
+  <h2>2. What happens during a run</h2>
+  <div class="mermaid">flowchart TD
+    A[Query ADO queue] --> B{repo:name tags resolve?}
+    B -- no --> X[InfraError / exit 1]
+    B -- yes --> C[Shallow clone into /tmp/refine-id]
+    C --> D[Refresh Graphify index]
+    D --> E[Comments + work item + repo context into prompt]
+    E --> F[Run Pi read-only]
+    F --> G{JSON and sourceRefs valid?}
+    G -- no --> H[Blocked comment + refinement-blocked]
+    G -- yes --> I{unknowns present?}
+    I -- yes --> H
+    I -- no --> J[Attachment + summary + refinement-done]
+    H --> K[Workspace cleanup]
+    J --> K
+  </div>
+  <p class="muted">The graph is built before Pi runs. Pi should reason over prepared context, not rediscover the repository without bounds.</p>
+
+  <h2>3. Per-work-item operation</h2>
+  <div class="mermaid">sequenceDiagram
+    participant M as main
+    participant A as Azure DevOps
+    participant W as WorkspaceService
+    participant C as ContextService
+    participant P as Pi
+    participant V as validate
+    participant U as PublishingService
+    M->>A: query_items(trigger, exclusions)
+    A-->>M: Queue
+    M->>W: prepare(repos, depth, PAT)
+    W-->>M: Workspace + Graphify index
+    M->>C: build_inputs(item, repos, context)
+    C->>A: get_comments(top=20)
+    A-->>C: Existing comments
+    C-->>M: Prompt with schema
+    M->>P: run(prompt, model)
+    P-->>M: Findings JSON
+    M->>V: check(schema, sourceRefs)
+    alt invalid or blocked
+      M->>U: publish blocked outcome
+      U->>A: comment + blocked tag
+    else valid and actionable
+      M->>U: publish done outcome
+      U->>A: attachment + comment + done tag
+    end
+    M->>W: cleanup in finally
+  </div>
+
+  <h2>4. Configuration that matters</h2>
+  <table>
+    <thead><tr><th>Variable</th><th>Use</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td><code>ADO_ORG</code>, <code>ADO_PROJECT</code></td><td>ADO REST base URL</td><td>Organisation and project must match.</td></tr>
+      <tr><td><code>ADO_PAT</code></td><td>Work-item and code access</td><td>Grant only Work Items Read &amp; Write and Code Read.</td></tr>
+      <tr><td><code>TAG_TRIGGER</code></td><td>Queue filter</td><td>Typically <code>needs-refinement</code>.</td></tr>
+      <tr><td><code>TAG_DONE</code>, <code>TAG_BLOCKED</code></td><td>Result state</td><td>Typically <code>refinement-done</code> / <code>refinement-blocked</code>.</td></tr>
+      <tr><td><code>CLONE_DEPTH</code></td><td>Git shallow clone</td><td>Usually <code>1</code> for a fast start.</td></tr>
+      <tr><td><code>PI_MODEL</code></td><td>Pi model selection</td><td>Must be available inside the container.</td></tr>
+      <tr><td><code>ALLOW_TITLE_EDITS</code></td><td>Optional title changes</td><td>Default <code>false</code>; enable deliberately.</td></tr>
+      <tr><td><code>TARGET_LANGUAGE</code></td><td>Findings fallback language</td><td>Work-item language wins in the prompt.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>5. Exact code paths for debugging</h2>
+  <details open>
+    <summary>Queue and exit codes — <code>src/refine.py:239-294</code></summary>
+    <p><code>main()</code> builds services once, reads the queue, and distinguishes infrastructure from validation failures.</p>
+    <pre><code>queue = client.query_items(cfg.tag_trigger, [cfg.tag_done, cfg.tag_blocked])
+for item in queue:
+    try:
+        refinement_svc.refine(item)
+    except pi_runner.InfraError as e:
+        exit_code = 1
+    except validate.ValidationError as e:
+        client.comment(item["id"], f"Refinement failed validation: {e}")
+        client.add_tag(item, cfg.tag_blocked)
+finally:
+    workspace_svc.shutdown()</code></pre>
+    <p class="muted">The exact control points are <code>src/refine.py:268-292</code>; the snippet is intentionally reduced to the core path.</p>
+  </details>
+  <details>
+    <summary>Per-item ordering — <code>src/services/refinement_service.py:75-142</code></summary>
+    <pre><code>workspace = self._workspace.prepare(...)
+try:
+    prompt = self._context.build_inputs(...)
+    findings = pi_runner.run(prompt, self._cfg.pi_model)
+    validate_module.check(findings, workspace.path, schema, known_repos=...)
+    self._publishing.publish(item, findings, ...)
+finally:
+    self._workspace.cleanup(workspace.path)</code></pre>
+    <p class="muted">Cleanup remains active after Pi, validation, or publishing errors: <code>src/services/refinement_service.py:134-142</code>.</p>
+  </details>
+  <details>
+    <summary>Security-relevant clone path — <code>src/git_ops.py:29-48</code></summary>
+    <pre><code>if pat:
+    header = base64.b64encode(f":{pat}".encode()).decode()
+    env["GIT_CONFIG_KEY_0"] = "http.extraHeader"
+    env["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {header}"
+subprocess.run(cmd, check=True, env=env)</code></pre>
+    <p class="muted">The PAT is not placed in the clone URL. Logs, debug output, and mounted files must still contain no credentials.</p>
+  </details>
+
+  <h2>6. Symptoms and first action</h2>
+  <table>
+    <thead><tr><th>Symptom</th><th>Likely area</th><th>First action</th></tr></thead>
+    <tbody>
+      <tr><td>Exit 2</td><td>Launcher</td><td>Check <code>.env</code> and Docker/Podman on PATH.</td></tr>
+      <tr><td>ADO returns HTML instead of JSON</td><td>Auth, proxy, org/project</td><td>Inspect <code>/tmp/ado-non-json-response.html</code>; verify PAT scope.</td></tr>
+      <tr><td>Unknown <code>repo:</code> tag</td><td><code>src/repos.jsonc</code></td><td>Add the mapping and restart the container.</td></tr>
+      <tr><td>Pi non-zero or non-JSON</td><td><code>src/pi_runner.py</code></td><td>Check Pi auth, model name, and output; exit 1 is expected.</td></tr>
+      <tr><td>Unresolved sourceRef</td><td><code>src/validate.py</code></td><td>Check repo tag, path, and clone contents; do not retry.</td></tr>
+      <tr><td>Graphify missing/failing</td><td><code>WorkspaceService</code></td><td>Check the filesystem fallback; analysis quality is reduced.</td></tr>
+    </tbody>
+  </table>
+  <div class="callout danger"><strong>Known operational risk:</strong> Some individual ADO title/tag write failures are logged and not propagated by <code>PublishingService._safe</code>. After an incident, verify the actual ADO target state, not only exit 0.</div>
+
+  <h2>7. Minimal developer check</h2>
+  <ol>
+    <li>Run the smallest affected tests locally.</li>
+    <li>For retry, path, ADO, or publishing changes, exercise at least one negative path.</li>
+    <li>Run a container smoke test: queue, workspace, Pi, findings validation, cleanup.</li>
+    <li>Do not add abstractions while existing services or <code>KnowledgeBackend</code> are sufficient.</li>
+  </ol>
+  <pre><code>
+uv run --with pytest --with requests --with jsonschema pytest -q
+uv run python src/validate.py
+# then, when Docker/ADO test access is available:
+./check.ps1
+./run.ps1
+</code></pre>
+  <p class="muted">pytest was not available through the system interpreter in the analysis environment; no percentage coverage is claimed here.</p>
+
+  <h2>8. Handoff checklist</h2>
+  <ul>
+    <li><input type="checkbox"> Do not commit <code>.env</code>; keep PAT scope minimal.</li>
+    <li><input type="checkbox"> <code>src/repos.jsonc</code> has URL and branch for every work-item repository.</li>
+    <li><input type="checkbox"> <code>./check.ps1</code> passes.</li>
+    <li><input type="checkbox"> A test item reaches either <code>refinement-done</code> or a justified <code>refinement-blocked</code>.</li>
+    <li><input type="checkbox"> Verify the attachment, comment, and tags in ADO manually.</li>
+    <li><input type="checkbox"> Update exact source references/line ranges when changing code.</li>
+  </ul>
+</section>
+
+<footer>
+  <p>Generated from repository source and the architecture analysis in <code>docs/20260724T103710Z_architektur-analyse.md</code>. Mermaid diagrams load from the jsDelivr CDN; opening the file without network access still shows the workflow source text, but not rendered SVG diagrams.</p>
+</footer>
+</main>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral" });
+  await mermaid.run({ querySelector: ".mermaid" });
+  window.setLanguage = function (language) {
+    const isGerman = language === "de";
+    document.documentElement.lang = language;
+    document.querySelectorAll(".lang").forEach((el) => {
+      if (el.id === "de" || el.id === "en" || el.id === "deTitle" || el.id === "enTitle") {
+        el.classList.toggle("active", el.id.startsWith(language));
+      }
+    });
+    document.getElementById("deBtn").setAttribute("aria-pressed", String(isGerman));
+    document.getElementById("enBtn").setAttribute("aria-pressed", String(!isGerman));
+    try { localStorage.setItem("ticket-refinery-language", language); } catch (_) {}
+  };
+  const saved = (() => { try { return localStorage.getItem("ticket-refinery-language"); } catch (_) { return null; } })();
+  if (saved === "en" || saved === "de") window.setLanguage(saved);
+</script>
+</body>
+</html>
