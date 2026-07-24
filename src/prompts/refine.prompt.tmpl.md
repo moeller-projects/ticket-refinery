@@ -80,8 +80,7 @@ as the final answer.
    do not have repository citations; identify them as work-item or comment
    evidence instead of inventing file references.
 10. If the curated block says the graph is degraded or not ready, use targeted
-    `read` on listed files and report the limitation; do not perform a
-    repository-wide scan.
+    `read` on listed files and report the limitation; no repository-wide scan.
 
 ## Required technical detail
 
@@ -104,8 +103,13 @@ Extract only types and interfaces relevant to the work item:
 
 Do not produce complete classes, complete files, or broad architecture dumps.
 Use the existing schema exactly: put concise object/class/contract facts in
-`facts`, structured object details in `dtos`, and endpoint details in
-`api_specs`. Do not add fields or rename schema keys.
+`facts`, structured UML-lite class, interface, and contract details in
+`classes`, and endpoint details in `api_specs`. Do not add fields or rename
+schema keys.
+For each `classes` entry, set `kind` to `class`, `interface`, or `contract`;
+include only evidenced `visibility`, inheritance, implemented interfaces,
+fields, methods, and relationships. Use `sourceRef` for the declaration or
+implementation lines supporting the entry.
 
 Keep the result compact: maximum 20 `facts`, maximum 50 relevant fields per
 object, maximum 10 exact code snippets, and maximum 20 pseudocode lines per

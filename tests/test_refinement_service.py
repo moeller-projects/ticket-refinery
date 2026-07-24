@@ -87,7 +87,7 @@ def _stub_knowledge() -> RepositoryKnowledge:
 def test_refine_runs_all_phases_in_order(services, monkeypatch):
     svc, workspace, context, publishing, _ = services
     monkeypatch.setattr(pi_runner, "run", lambda *a, **kw: {
-        "facts": [], "dtos": [], "api_specs": [], "unknowns": [], "sourceRefs": [],
+        "facts": [], "classes": [], "api_specs": [], "unknowns": [], "sourceRefs": [],
         "suggested_title": "X",
     })
     monkeypatch.setattr(validate_module, "check", lambda *a, **kw: None)
@@ -126,7 +126,7 @@ def test_refine_uses_metrics_when_provided(services, monkeypatch):
     col = metrics.MetricsCollector()
     svc._metrics = col
     monkeypatch.setattr(pi_runner, "run", lambda *a, **kw: {
-        "facts": [], "dtos": [], "api_specs": [], "unknowns": [], "sourceRefs": [],
+        "facts": [], "classes": [], "api_specs": [], "unknowns": [], "sourceRefs": [],
     })
     monkeypatch.setattr(validate_module, "check", lambda *a, **kw: None)
     svc.refine(_item())
@@ -144,7 +144,7 @@ def test_refine_increments_blocked_counter_on_validation_failure(services, monke
     col = metrics.MetricsCollector()
     svc._metrics = col
     monkeypatch.setattr(pi_runner, "run", lambda *a, **kw: {
-        "facts": [], "dtos": [], "api_specs": [], "unknowns": [], "sourceRefs": [],
+        "facts": [], "classes": [], "api_specs": [], "unknowns": [], "sourceRefs": [],
     })
 
     def _bad(*a, **kw):
@@ -175,7 +175,7 @@ def test_refine_records_attachment_upload_when_provided(services, monkeypatch):
     publishing_mock.publish.side_effect = fake_publish
 
     monkeypatch.setattr(pi_runner, "run", lambda *a, **kw: {
-        "facts": [], "dtos": [], "api_specs": [], "unknowns": [], "sourceRefs": [],
+        "facts": [], "classes": [], "api_specs": [], "unknowns": [], "sourceRefs": [],
     })
     monkeypatch.setattr(validate_module, "check", lambda *a, **kw: None)
     svc.refine(_item())
@@ -224,7 +224,7 @@ def test_refine_splices_repo_context_into_prompt(monkeypatch):
     )
 
     monkeypatch.setattr(pi_runner, "run", lambda *a, **kw: {
-        "facts": [], "dtos": [], "api_specs": [], "unknowns": [], "sourceRefs": [],
+        "facts": [], "classes": [], "api_specs": [], "unknowns": [], "sourceRefs": [],
     })
     monkeypatch.setattr(validate_module, "check", lambda *a, **kw: None)
     svc.refine(_item())
@@ -258,7 +258,7 @@ def test_refine_without_knowledge_skips_repo_context(monkeypatch):
     )
 
     monkeypatch.setattr(pi_runner, "run", lambda *a, **kw: {
-        "facts": [], "dtos": [], "api_specs": [], "unknowns": [], "sourceRefs": [],
+        "facts": [], "classes": [], "api_specs": [], "unknowns": [], "sourceRefs": [],
     })
     monkeypatch.setattr(validate_module, "check", lambda *a, **kw: None)
     svc.refine(_item())

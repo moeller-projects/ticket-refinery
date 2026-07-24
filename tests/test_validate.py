@@ -12,10 +12,10 @@ import validate
 def schema(tmp_path):
     s = {
         "type": "object",
-        "required": ["facts", "dtos", "api_specs", "unknowns", "sourceRefs"],
+        "required": ["facts", "classes", "api_specs", "unknowns", "sourceRefs"],
         "properties": {
             "facts": {"type": "array", "items": {"type": "string"}},
-            "dtos": {"type": "array", "items": {"type": "object"}},
+            "classes": {"type": "array", "items": {"type": "object"}},
             "api_specs": {"type": "array", "items": {"type": "object"}},
             "unknowns": {"type": "array", "items": {"type": "object"}},
             "sourceRefs": {"type": "array", "items": {"type": "string"}},
@@ -34,7 +34,7 @@ def ws(tmp_path):
 
 
 def _base_findings() -> dict:
-    return {"facts": [], "dtos": [], "api_specs": [], "unknowns": [], "sourceRefs": []}
+    return {"facts": [], "classes": [], "api_specs": [], "unknowns": [], "sourceRefs": []}
 
 
 def test_check_accepts_minimal_valid_payload(ws, schema):
@@ -51,7 +51,7 @@ def test_check_splits_semicolon_joined_refs(ws, schema):
 
 
 def test_check_rejects_missing_required_field(ws, schema):
-    findings = {"facts": [], "dtos": []}  # missing 3 required
+    findings = {"facts": [], "classes": []}  # missing 3 required
     with pytest.raises(ValidationError):
         validate.check(findings, ws, schema)
 
@@ -65,7 +65,7 @@ def test_check_rejects_unresolved_top_level_ref(ws, schema):
 
 def test_check_rejects_unresolved_dto_ref(ws, schema):
     findings = _base_findings()
-    findings["dtos"] = [{"name": "Foo", "fields": [], "sourceRef": "r:nope.py#L1"}]
+    findings["classes"] = [{"name": "Foo", "fields": [], "sourceRef": "r:nope.py#L1"}]
     with pytest.raises(ValidationError, match="Unresolved sourceRefs"):
         validate.check(findings, ws, schema)
 

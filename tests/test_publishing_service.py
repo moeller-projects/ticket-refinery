@@ -24,7 +24,7 @@ def client():
 def _findings_done():
     return {
         "facts": ["one"],
-        "dtos": [{"name": "UserDto", "sourceRef": "r:u.py#L1", "fields": []}],
+        "classes": [{"name": "User", "kind": "class", "sourceRef": "r:u.py#L1", "fields": [], "methods": [], "relationships": []}],
         "api_specs": [{"method": "GET", "path": "/x", "sourceRef": "r:r.py#L1"}],
         "unknowns": [],
         "sourceRefs": ["r:u.py#L1"],
@@ -35,7 +35,7 @@ def _findings_done():
 def _findings_blocked():
     return {
         "facts": [],
-        "dtos": [],
+        "classes": [],
         "api_specs": [],
         "unknowns": [{"question": "Why?", "why": "code unclear"}],
         "sourceRefs": [],
@@ -123,7 +123,7 @@ def test_build_result_markdown_contains_sections():
         _findings_done(),
     )
     for header in ("# Refinement result for #1", "## Title", "## Facts",
-                   "## DTOs", "## API specs"):
+                   "## Classes", "## API specs"):
         assert header in md
 
 
@@ -146,14 +146,14 @@ def test_versioned_attachment_name_falls_back_when_title_blank():
 
 def test_findings_to_html_escapes_special_chars():
     from services.publishing_service import findings_to_html
-    out = findings_to_html({"facts": ["<script>alert(1)</script>"], "dtos": [], "api_specs": []})
+    out = findings_to_html({"facts": ["<script>alert(1)</script>"], "classes": [], "api_specs": []})
     assert "<script>" not in out
     assert "&lt;script&gt;" in out
 
 
 def test_findings_to_ac_html_is_stub():
     from services.publishing_service import findings_to_ac_html
-    out = findings_to_ac_html({"dtos": []})
+    out = findings_to_ac_html({"classes": []})
     assert "<!--" in out
 
 
@@ -165,7 +165,7 @@ def test_format_unknowns_lists_questions():
 
 def test_format_summary_counts():
     from services.publishing_service import format_summary
-    out = format_summary({"facts": ["a", "b"], "dtos": [{}], "api_specs": [], "sourceRefs": ["x", "y"]})
+    out = format_summary({"facts": ["a", "b"], "classes": [{}], "api_specs": [], "sourceRefs": ["x", "y"]})
     assert "Facts: 2" in out
-    assert "DTOs: 1" in out
+    assert "Classes: 1" in out
     assert "Source refs: 2" in out

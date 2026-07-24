@@ -12,7 +12,7 @@ def _make_proc(returncode, stdout="", stderr=""):
 
 
 def test_run_returns_parsed_json(monkeypatch):
-    payload = '{"facts": [], "dtos": [], "api_specs": [], "unknowns": [], "sourceRefs": []}'
+    payload = '{"facts": [], "classes": [], "api_specs": [], "unknowns": [], "sourceRefs": []}'
     monkeypatch.setattr(
         pi_runner.subprocess, "run",
         lambda cmd, **kw: _make_proc(0, stdout=payload),
@@ -26,7 +26,7 @@ def test_run_passes_through_cli_flags(monkeypatch):
     def fake_run(cmd, **kw):
         captured["cmd"] = cmd
         captured["kw"] = kw
-        return _make_proc(0, stdout='{"facts":[],"dtos":[],"api_specs":[],"unknowns":[],"sourceRefs":[]}')
+        return _make_proc(0, stdout='{"facts":[],"classes":[],"api_specs":[],"unknowns":[],"sourceRefs":[]}')
 
     monkeypatch.setattr(pi_runner.subprocess, "run", fake_run)
     pi_runner.run("PROMPT", "m")

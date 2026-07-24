@@ -116,7 +116,7 @@ class PublishingService:
         tag_done: str,
     ) -> None:
         facts = findings.get("facts", [])
-        objects = findings.get("dtos", [])
+        objects = findings.get("classes", [])
         api_specs = findings.get("api_specs", [])
         summary = format_summary(findings)
         log.info(
@@ -174,10 +174,10 @@ def findings_to_html(findings: dict) -> str:
     parts: list[str] = ["### Facts"]
     for fact in findings.get("facts", []):
         parts.append(f"- {esc(fact)}")
-    if findings.get("dtos"):
-        parts.append("\n### DTOs")
-        for d in findings["dtos"]:
-            parts.append(f"- **{esc(d['name'])}** — `{esc(d['sourceRef'])}`")
+    if findings.get("classes"):
+        parts.append("\n### Classes")
+        for c in findings["classes"]:
+            parts.append(f"- **{esc(c['name'])}** ({esc(c['kind'])}) — `{esc(c['sourceRef'])}`")
     if findings.get("api_specs"):
         parts.append("\n### API specs")
         for a in findings["api_specs"]:
@@ -203,7 +203,7 @@ def format_summary(findings: dict) -> str:
         "## Refinement summary",
         "",
         f"- Facts: {len(findings.get('facts', []))}",
-        f"- DTOs: {len(findings.get('dtos', []))}",
+        f"- Classes: {len(findings.get('classes', []))}",
         f"- API specs: {len(findings.get('api_specs', []))}",
         f"- Source refs: {len(findings.get('sourceRefs', []))}",
     ])
@@ -219,10 +219,10 @@ def build_result_markdown(item: dict, findings: dict) -> str:
     ]
     if findings.get("facts"):
         lines += ["", "## Facts", *[f"- {f}" for f in findings["facts"]]]
-    if findings.get("dtos"):
-        lines += ["", "## DTOs"]
-        for d in findings["dtos"]:
-            lines.append(f"- {d['name']} — {d['sourceRef']}")
+    if findings.get("classes"):
+        lines += ["", "## Classes"]
+        for c in findings["classes"]:
+            lines.append(f"- {c['name']} ({c['kind']}) — {c['sourceRef']}")
     if findings.get("api_specs"):
         lines += ["", "## API specs"]
         for a in findings["api_specs"]:

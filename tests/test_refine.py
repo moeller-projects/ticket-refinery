@@ -142,17 +142,17 @@ def test_render_prompt_handles_missing_description_and_ac(tmp_path, monkeypatch)
 def test_findings_to_html_includes_sections_and_escapes():
     findings = {
         "facts": ["plain", "<script>alert(1)</script>"],
-        "dtos": [{"name": "<X>", "sourceRef": "r:f.py#L1", "fields": []}],
+        "classes": [{"name": "<X>", "kind": "interface", "sourceRef": "r:f.py#L1", "fields": [], "methods": [], "relationships": []}],
         "api_specs": [{"method": "GET", "path": "/v", "sourceRef": "r:f.py#L2"}],
     }
     out = refine.findings_to_html(findings)
     assert "### Facts" in out
-    assert "### DTOs" in out
+    assert "### Classes" in out
     assert "### API specs" in out
     # Raw <script> must be escaped, not embedded as live HTML.
     assert "<script>" not in out
     assert "&lt;script&gt;" in out
-    assert "&lt;X&gt;" in out  # DTO name escaped
+    assert "&lt;X&gt;" in out  # class name escaped
 
 
 def test_findings_to_html_empty_payload():
@@ -173,9 +173,9 @@ def test_format_unknowns_lists_questions():
 
 
 def test_format_summary_counts_sections():
-    findings = {"facts": [1, 2], "dtos": [{}], "api_specs": [], "sourceRefs": ["r:f.py#L1"]}
+    findings = {"facts": [1, 2], "classes": [{}], "api_specs": [], "sourceRefs": ["r:f.py#L1"]}
     out = refine.format_summary(findings)
-    assert "Facts: 2" in out and "DTOs: 1" in out and "API specs: 0" in out
+    assert "Facts: 2" in out and "Classes: 1" in out and "API specs: 0" in out
     assert "Source refs: 1" in out
 
 
@@ -284,7 +284,7 @@ def test_process_item_happy_path_writes_back_and_transitions(monkeypatch):
     monkeypatch.setattr(refine, "render_prompt",
                         lambda *a, **kw: "PROMPT")
     findings = {
-        "facts": ["f1"], "dtos": [{"name": "D", "sourceRef": "alpha:f.py#L1", "fields": []}],
+        "facts": ["f1"], "classes": [{"name": "D", "kind": "class", "sourceRef": "alpha:f.py#L1", "fields": [], "methods": [], "relationships": []}],
         "api_specs": [], "unknowns": [], "sourceRefs": ["alpha:f.py#L1"],
         "suggested_title": None,
     }
@@ -321,7 +321,7 @@ def test_process_item_unknowns_takes_blocked_branch(monkeypatch):
 
     monkeypatch.setattr(refine, "render_prompt", lambda *a, **kw: "P")
     findings = {
-        "facts": [], "dtos": [], "api_specs": [],
+        "facts": [], "classes": [], "api_specs": [],
         "unknowns": [{"question": "?", "why": "w"}], "sourceRefs": [],
     }
     monkeypatch.setattr(refine.pi_runner, "run", lambda *a, **kw: findings)
@@ -344,7 +344,7 @@ def test_process_item_calls_title_patch_when_allowed_and_provided(monkeypatch):
 
     monkeypatch.setattr(refine, "render_prompt", lambda *a, **kw: "P")
     findings = {
-        "facts": [], "dtos": [], "api_specs": [],
+        "facts": [], "classes": [], "api_specs": [],
         "unknowns": [], "sourceRefs": [],
         "suggested_title": "Better Title",
     }
@@ -365,7 +365,7 @@ def test_process_item_title_patch_skipped_when_disallowed(monkeypatch):
 
     monkeypatch.setattr(refine, "render_prompt", lambda *a, **kw: "P")
     findings = {
-        "facts": [], "dtos": [], "api_specs": [],
+        "facts": [], "classes": [], "api_specs": [],
         "unknowns": [], "sourceRefs": [],
         "suggested_title": "Should NOT PATCH",
     }

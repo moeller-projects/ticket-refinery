@@ -1,17 +1,76 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["facts", "dtos", "api_specs", "unknowns", "sourceRefs"],
+  "required": ["facts", "classes", "api_specs", "unknowns", "sourceRefs"],
   "properties": {
     "facts": { "type": "array", "items": { "type": "string" } },
-    "dtos": {
+    "classes": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["name", "fields", "sourceRef"],
+        "required": ["name", "kind", "fields", "methods", "relationships", "sourceRef"],
         "properties": {
           "name": { "type": "string" },
-          "fields": { "type": "array", "items": { "type": "object" } },
+          "kind": { "enum": ["class", "interface", "contract"] },
+          "visibility": { "type": "string" },
+          "abstract": { "type": "boolean" },
+          "extends": { "type": ["string", "null"] },
+          "implements": { "type": "array", "items": { "type": "string" } },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type"],
+              "properties": {
+                "name": { "type": "string" },
+                "type": { "type": "string" },
+                "visibility": { "type": "string" },
+                "optional": { "type": "boolean" },
+                "default": {},
+                "description": { "type": "string" }
+              }
+            }
+          },
+          "methods": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "parameters", "returns"],
+              "properties": {
+                "name": { "type": "string" },
+                "visibility": { "type": "string" },
+                "parameters": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["name", "type"],
+                    "properties": {
+                      "name": { "type": "string" },
+                      "type": { "type": "string" },
+                      "optional": { "type": "boolean" }
+                    }
+                  }
+                },
+                "returns": { "type": "string" },
+                "description": { "type": "string" }
+              }
+            }
+          },
+          "relationships": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["type", "target"],
+              "properties": {
+                "type": {
+                  "enum": ["extends", "implements", "association", "dependency", "aggregation", "composition"]
+                },
+                "target": { "type": "string" },
+                "label": { "type": "string" },
+                "multiplicity": { "type": "string" }
+              }
+            }
+          },
           "sourceRef": { "type": "string" }
         }
       }

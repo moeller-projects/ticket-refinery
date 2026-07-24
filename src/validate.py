@@ -22,7 +22,7 @@ def _normalize_and_check_source_refs(findings: dict, workspace: Path, known_repo
 def _normalize_source_ref_containers(findings: dict) -> None:
     for key in ("sourceRefs",):
         findings[key] = _split_refs(findings.get(key, []))
-    for section in ("dtos", "api_specs"):
+    for section in ("classes", "api_specs"):
         for obj in findings.get(section, []):
             if "sourceRef" in obj:
                 refs = _split_refs([obj["sourceRef"]])
@@ -44,7 +44,7 @@ def _check_source_refs(findings: dict, workspace: Path, known_repos: list[str]) 
     for ref in findings.get("sourceRefs", []):
         if not _ref_resolves(ref, workspace, known_repos):
             bad.append(ref)
-    for section in ("dtos", "api_specs"):
+    for section in ("classes", "api_specs"):
         for obj in findings.get(section, []):
             r = obj.get("sourceRef")
             if r and not _ref_resolves(r, workspace, known_repos):
@@ -80,9 +80,9 @@ def _ref_resolves(ref: str, workspace: Path, known_repos: list[str] | None = Non
 if __name__ == "__main__":  # ponytail: one-shot self-check
     import tempfile, textwrap
     schema = json.loads(textwrap.dedent("""
-        {"type":"object","required":["facts","dtos","api_specs","unknowns","sourceRefs"],
+        {"type":"object","required":["facts","classes","api_specs","unknowns","sourceRefs"],
          "properties":{"facts":{"type":"array","items":{"type":"string"}},
-                       "dtos":{"type":"array","items":{"type":"object"}},
+                       "classes":{"type":"array","items":{"type":"object"}},
                        "api_specs":{"type":"array","items":{"type":"object"}},
                        "unknowns":{"type":"array","items":{"type":"object"}},
                        "sourceRefs":{"type":"array","items":{"type":"string"}}}}
@@ -93,7 +93,7 @@ if __name__ == "__main__":  # ponytail: one-shot self-check
         (ws / "r" / "f.py").write_text("x = 1\n")
         schema_file = Path(td) / "s.json"
         schema_file.write_text(json.dumps(schema))
-        findings = {"facts": [], "dtos": [], "api_specs": [],
+        findings = {"facts": [], "classes": [], "api_specs": [],
                     "unknowns": [], "sourceRefs": ["r:f.py#L1"]}
         check(findings, ws, schema_file)  # must not raise
         findings["sourceRefs"].append("r:nope.py#L1")
